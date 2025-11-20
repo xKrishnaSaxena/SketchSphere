@@ -1,14 +1,14 @@
-import React, { useState, useEffect, useContext, useRef } from 'react';
-import Whiteboard from './components/whiteboard';
-import UserPanel from './components/UserPanel';
-import VideoCall from './components/VideoCall';
-import { SocketContext } from './context/SocketContext';
-import { EVENTS } from './utils/constants';
+import React, { useState, useEffect, useContext, useRef } from "react";
+import Whiteboard from "./components/whiteboard";
+import UserPanel from "./components/UserPanel";
+import VideoCall from "./components/VideoCall";
+import { SocketContext } from "./context/SocketContext";
+import { EVENTS } from "./utils/constants";
 
 function App() {
   const socket = useContext(SocketContext);
   const [users, setUsers] = useState([]);
-  const [roomId] = useState('default-room');
+  const [roomId] = useState("default-room");
   const [currentUser, setCurrentUser] = useState(null);
   const [elements, setElements] = useState([]);
   const whiteboardRef = useRef(null);
@@ -20,7 +20,7 @@ function App() {
     const userName = `User_${Math.floor(Math.random() * 1000)}`;
     const user = {
       id: socket.id,
-      name: userName
+      name: userName,
     };
     setCurrentUser(user);
 
@@ -29,8 +29,8 @@ function App() {
 
     // Listen for user events
     const handleUserJoined = (data) => {
-      setUsers(prev => {
-        if (!prev.find(u => u.id === data.user.id)) {
+      setUsers((prev) => {
+        if (!prev.find((u) => u.id === data.user.id)) {
           return [...prev, data.user];
         }
         return prev;
@@ -38,7 +38,7 @@ function App() {
     };
 
     const handleUserLeft = (data) => {
-      setUsers(prev => prev.filter(u => u.id !== data.userId));
+      setUsers((prev) => prev.filter((u) => u.id !== data.userId));
     };
 
     const handleRoomUsers = (data) => {
@@ -47,11 +47,11 @@ function App() {
 
     socket.on(EVENTS.USER_JOINED, handleUserJoined);
     socket.on(EVENTS.USER_LEFT, handleUserLeft);
-    socket.on('room-users', handleRoomUsers);
+    socket.on("room-users", handleRoomUsers);
 
     // Add current user to the list
-    setUsers(prev => {
-      if (!prev.find(u => u.id === user.id)) {
+    setUsers((prev) => {
+      if (!prev.find((u) => u.id === user.id)) {
         return [...prev, user];
       }
       return prev;
@@ -60,7 +60,7 @@ function App() {
     return () => {
       socket.off(EVENTS.USER_JOINED, handleUserJoined);
       socket.off(EVENTS.USER_LEFT, handleUserLeft);
-      socket.off('room-users', handleRoomUsers);
+      socket.off("room-users", handleRoomUsers);
     };
   }, [socket, roomId]);
 
@@ -79,14 +79,13 @@ function App() {
           <div className="header-left">
             <h1>🎨 SketchSphere</h1>
           </div>
-          
-          <div className="header-toolbar">
-          </div>
+
+          <div className="header-toolbar"></div>
         </div>
-        
-        <Whiteboard 
+
+        <Whiteboard
           ref={whiteboardRef}
-          roomId={roomId} 
+          roomId={roomId}
           users={users}
           elements={elements}
           setElements={setElements}
@@ -94,11 +93,8 @@ function App() {
         />
         <VideoCall />
       </div>
-      
-      {/* <UserPanel 
-        users={users} 
-        roomId={roomId}
-      /> */}
+
+      {/* <UserPanel users={users} roomId={roomId} /> */}
     </div>
   );
 }
