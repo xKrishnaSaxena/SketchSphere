@@ -1,34 +1,50 @@
-const SHAPES = {
-  CIRCLE: "circle",
-  RECTANGLE: "rectangle",
-  SQUARE: "square",
-  TRIANGLE: "triangle",
-  LINE: "line",
-  FREEHAND: "freehand",
-  ERASER: "eraser",
-  TEXT: "text",
-  HEXAGON: "hexagon",
-  PENTAGON: "pentagon",
+export const SHAPES = {
+  CIRCLE: 'circle',
+  RECTANGLE: 'rectangle',
+  TRIANGLE: 'triangle',
+  LINE: 'line',
+  FREEHAND: 'freehand',
+  ERASER: 'eraser',
+  TEXT: 'text',
+  HEXAGON: 'hexagon',
+  PENTAGON: 'pentagon'
 };
 
-const EVENTS = {
+export const EVENTS = {
   // Room events
-  JOIN_ROOM: "join-room",
-  USER_JOINED: "user-joined",
-  USER_LEFT: "user-left",
+  JOIN_ROOM: 'join-room',
+  LEAVE_ROOM: 'leave-room',
+  USER_JOINED: 'user-joined',
+  USER_LEFT: 'user-left',
+  ROOM_FULL: 'room-full',
 
   // Drawing events
-  DRAW_START: "draw-start",
-  DRAW_MOVE: "draw-move",
-  DRAW_END: "draw-end",
-  SHAPE_UPDATE: "shape-update", // For resizing/moving
-  SHAPE_RECOGNIZED: "shape-recognized", // For AI replacement
-  CLEAR_BOARD: "clear-board",
+  DRAW_START: 'draw-start',
+  DRAW_MOVE: 'draw-move',
+  DRAW_END: 'draw-end',
+  SHAPE_RECOGNIZED: 'shape-recognized',
+  SHAPE_UPDATE: 'shape-update',
+  CLEAR_BOARD: 'clear-board',
 
-  // Video Call Signaling
-  CALL_USER: "call-user",
-  ANSWER_CALL: "answer-call",
-  ICE_CANDIDATE: "ice-candidate",
+  // Cursor events
+  CURSOR_MOVE: 'cursor-move',
+  CURSOR_LEAVE: 'cursor-leave',
+
+  // Chat events
+  MESSAGE_SEND: 'message-send',
+  MESSAGE_RECEIVE: 'message-receive'
 };
 
-module.exports = { SHAPES, EVENTS };
+export const DRAWING_TOOLS = {
+  PENCIL: 'pencil',
+  ERASER: 'eraser',
+  SELECT: 'select',
+  TEXT: 'text',
+  SHAPE: 'shape'
+};
+
+export const SOCKET_CONFIG = {
+  RECONNECTION_ATTEMPTS: 5,
+  RECONNECTION_DELAY: 3000,
+  PING_TIMEOUT: 10000
+};

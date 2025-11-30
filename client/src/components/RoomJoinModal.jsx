@@ -1,50 +1,47 @@
-import React, { useState } from "react";
+import React, { useState } from 'react';
 
 const RoomJoinModal = ({ onJoin, onCreateRoom, isVisible }) => {
-  const [userName, setUserName] = useState("");
-  const [roomCode, setRoomCode] = useState("");
-  const [error, setError] = useState("");
+  const [userName, setUserName] = useState('');
+  const [roomCode, setRoomCode] = useState('');
+  const [error, setError] = useState('');
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    setError("");
-
+    setError('');
+    
     if (!userName.trim()) {
-      setError("Please enter your name");
+      setError('Please enter your name');
       return;
     }
-
+    
     if (!roomCode.trim()) {
-      setError("Please enter a room code");
+      setError('Please enter a room code');
       return;
     }
-
+    
     // Validate room code format (6 alphanumeric characters)
     const codePattern = /^[A-Z0-9]{6}$/i;
     if (!codePattern.test(roomCode.trim())) {
-      setError("Room code must be 6 alphanumeric characters");
+      setError('Room code must be 6 alphanumeric characters');
       return;
     }
-
+    
     onJoin(userName.trim(), roomCode.trim().toUpperCase());
   };
 
   const handleCreateRoom = () => {
-    setError("");
+    setError('');
     if (!userName.trim()) {
-      setError("Please enter your name first");
+      setError('Please enter your name first');
       return;
     }
     onCreateRoom(userName.trim());
   };
 
   const handleCodeChange = (e) => {
-    const value = e.target.value
-      .toUpperCase()
-      .replace(/[^A-Z0-9]/g, "")
-      .slice(0, 6);
+    const value = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6);
     setRoomCode(value);
-    setError("");
+    setError('');
   };
 
   if (!isVisible) return null;
@@ -258,14 +255,14 @@ const RoomJoinModal = ({ onJoin, onCreateRoom, isVisible }) => {
           75% { transform: translateX(8px); }
         }
       `}</style>
-
+      
       <div className="room-join-overlay">
         <div className="room-join-modal">
           <div className="room-join-header">
             <h2>🎨 Join SketchSphere</h2>
             <p>Enter your name and room code to start collaborating</p>
           </div>
-
+          
           <form onSubmit={handleSubmit} className="room-join-form">
             <div className="form-group">
               <label htmlFor="userName">Your Name</label>
@@ -275,14 +272,14 @@ const RoomJoinModal = ({ onJoin, onCreateRoom, isVisible }) => {
                 value={userName}
                 onChange={(e) => {
                   setUserName(e.target.value);
-                  setError("");
+                  setError('');
                 }}
                 placeholder="Enter your name"
                 required
                 autoFocus
               />
             </div>
-
+            
             <div className="form-group">
               <label htmlFor="roomCode">Room Code</label>
               <input
@@ -299,15 +296,19 @@ const RoomJoinModal = ({ onJoin, onCreateRoom, isVisible }) => {
                 Enter the 6-character room code shared by the host
               </span>
             </div>
-
-            {error && <div className="error-message">{error}</div>}
-
+            
+            {error && (
+              <div className="error-message">
+                {error}
+              </div>
+            )}
+            
             <div className="form-actions">
               <button type="submit" className="btn-primary">
                 Join Room
               </button>
-              <button
-                type="button"
+              <button 
+                type="button" 
                 className="btn-secondary"
                 onClick={handleCreateRoom}
               >
@@ -315,12 +316,9 @@ const RoomJoinModal = ({ onJoin, onCreateRoom, isVisible }) => {
               </button>
             </div>
           </form>
-
+          
           <div className="modal-footer">
-            <p>
-              💡 Don't have a code? Click "Create New Room" to start a new
-              session
-            </p>
+            <p>💡 Don't have a code? Click "Create New Room" to start a new session</p>
           </div>
         </div>
       </div>
@@ -328,4 +326,4 @@ const RoomJoinModal = ({ onJoin, onCreateRoom, isVisible }) => {
   );
 };
 
-export default RoomJoinModal;
+export default RoomJoinModal; 

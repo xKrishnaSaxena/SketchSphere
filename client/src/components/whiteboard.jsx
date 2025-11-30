@@ -6,15 +6,7 @@ import React, {
   forwardRef,
   useImperativeHandle,
 } from "react";
-import {
-  Stage,
-  Layer,
-  Line,
-  Circle,
-  Rect,
-  Transformer,
-  Text,
-} from "react-konva";
+import { Stage, Layer, Line, Circle, Rect, Transformer, Text } from "react-konva";
 import { SHAPES, EVENTS } from "../utils/constants";
 import { SocketContext } from "../context/SocketContext";
 /* Heuristic fallback is now inside the AI service */
@@ -41,16 +33,16 @@ const Whiteboard = forwardRef(
     const [showSizeControls, setShowSizeControls] = useState(false);
 
     const [aiModelLoaded, setAiModelLoaded] = useState(false);
-
-    const [currentTool, setCurrentTool] = useState("pencil"); // 'pencil', 'eraser', 'select', 'text'
-    const [selectedId, setSelectedId] = useState(null);
-    const transformerRef = useRef(null);
-    const [draggedShape, setDraggedShape] = useState(null);
-    const [textCursor, setTextCursor] = useState(null);
-    const [editingTextId, setEditingTextId] = useState(null);
-    const [fontSize, setFontSize] = useState(16);
-    const [cursorBlink, setCursorBlink] = useState(true);
-    const [textContextMenu, setTextContextMenu] = useState(null);
+  
+  const [currentTool, setCurrentTool] = useState("pencil"); // 'pencil', 'eraser', 'select', 'text'
+  const [selectedId, setSelectedId] = useState(null);
+  const transformerRef = useRef(null);
+  const [draggedShape, setDraggedShape] = useState(null);
+  const [textCursor, setTextCursor] = useState(null);
+  const [editingTextId, setEditingTextId] = useState(null);
+  const [fontSize, setFontSize] = useState(16);
+  const [cursorBlink, setCursorBlink] = useState(true);
+  const [textContextMenu, setTextContextMenu] = useState(null);
     const [textFont, setTextFont] = useState("Arial");
     const [textColor, setTextColor] = useState(selectedColor);
     const currentDrawingElementIdRef = useRef(null);
@@ -65,56 +57,53 @@ const Whiteboard = forwardRef(
     // Export canvas as PDF
     const handleExportPDF = () => {
       if (!stageRef.current) return;
-
+      
       try {
         const stage = stageRef.current.getStage();
-        const dataURL = stage.toDataURL({
+        const dataURL = stage.toDataURL({ 
           pixelRatio: 2, // Higher quality
-          mimeType: "image/png",
-          quality: 1,
+          mimeType: 'image/png',
+          quality: 1
         });
-
+        
         // Calculate PDF dimensions (A4 size in mm)
         const pdfWidth = 210; // A4 width in mm
         const pdfHeight = 297; // A4 height in mm
-
+        
         // Calculate aspect ratio and adjust dimensions
         const canvasAspect = stageSize.width / stageSize.height;
         let imgWidth = pdfWidth;
         let imgHeight = pdfWidth / canvasAspect;
-
+        
         // If height exceeds A4, scale down
         if (imgHeight > pdfHeight) {
           imgHeight = pdfHeight;
           imgWidth = pdfHeight * canvasAspect;
         }
-
+        
         // Create PDF (A4 size)
         const pdf = new jsPDF({
-          orientation: imgWidth > imgHeight ? "landscape" : "portrait",
-          unit: "mm",
-          format: "a4",
+          orientation: imgWidth > imgHeight ? 'landscape' : 'portrait',
+          unit: 'mm',
+          format: 'a4'
         });
-
+        
         // Center the image on the page
         const xOffset = (pdfWidth - imgWidth) / 2;
         const yOffset = (pdfHeight - imgHeight) / 2;
-
+        
         // Add image to PDF
-        pdf.addImage(dataURL, "PNG", xOffset, yOffset, imgWidth, imgHeight);
-
+        pdf.addImage(dataURL, 'PNG', xOffset, yOffset, imgWidth, imgHeight);
+        
         // Generate filename with timestamp
-        const timestamp = new Date()
-          .toISOString()
-          .replace(/[:.]/g, "-")
-          .slice(0, -5);
+        const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
         const filename = `sketchsphere-${timestamp}.pdf`;
-
+        
         // Save PDF
         pdf.save(filename);
         setDebugInfo("PDF exported successfully");
       } catch (error) {
-        console.error("Error exporting PDF:", error);
+        console.error('Error exporting PDF:', error);
         setDebugInfo("Failed to export PDF");
       }
     };
@@ -138,7 +127,7 @@ const Whiteboard = forwardRef(
         mounted = false;
       };
     }, []);
-
+    
     useEffect(() => {
       if (textCursor) {
         const blinkInterval = setInterval(() => {
@@ -149,15 +138,14 @@ const Whiteboard = forwardRef(
         setCursorBlink(true);
       }
     }, [textCursor]);
-
+    
     useEffect(() => {
       const handleKeyDown = (e) => {
         if (!textCursor) return;
-
+        
         if (e.key === "ArrowUp" && !textContextMenu) {
           e.preventDefault();
-          const containerRect =
-            stageContainerRef.current?.getBoundingClientRect();
+          const containerRect = stageContainerRef.current?.getBoundingClientRect();
           if (containerRect) {
             setTextContextMenu({
               x: containerRect.left + textCursor.x + 100,
@@ -166,14 +154,14 @@ const Whiteboard = forwardRef(
           }
           return;
         }
-
+        
         if (e.key === "Escape") {
           setTextCursor(null);
           setEditingTextId(null);
           setTextContextMenu(null);
           return;
         }
-
+        
         if (e.key === "Enter") {
           if (editingTextId) {
             const element = elements.find((el) => el.id === editingTextId);
@@ -200,7 +188,7 @@ const Whiteboard = forwardRef(
                   color: textColor,
                   fontSize: fontSize,
                 },
-                userId: currentUser?.id,
+                userId: currentUser?.id
               });
             }
           } else if (textCursor.text && textCursor.text.trim()) {
@@ -223,7 +211,7 @@ const Whiteboard = forwardRef(
             socket.emit(EVENTS.DRAW_START, {
               roomId,
               element: newTextElement,
-              userId: currentUser?.id,
+              userId: currentUser?.id
             });
             setDebugInfo(`Text added: "${textCursor.text}"`);
           }
@@ -231,7 +219,7 @@ const Whiteboard = forwardRef(
           setEditingTextId(null);
           return;
         }
-
+        
         if (e.key === "Backspace") {
           if (editingTextId) {
             const element = elements.find((el) => el.id === editingTextId);
@@ -259,7 +247,7 @@ const Whiteboard = forwardRef(
           }
           return;
         }
-
+        
         if (e.key.length === 1 && !e.ctrlKey && !e.metaKey) {
           if (editingTextId) {
             const element = elements.find((el) => el.id === editingTextId);
@@ -279,22 +267,11 @@ const Whiteboard = forwardRef(
           }
         }
       };
-
+      
       window.addEventListener("keydown", handleKeyDown);
       return () => window.removeEventListener("keydown", handleKeyDown);
-    }, [
-      textCursor,
-      editingTextId,
-      elements,
-      fontSize,
-      selectedColor,
-      socket,
-      roomId,
-      textContextMenu,
-      textFont,
-      textColor,
-    ]);
-
+    }, [textCursor, editingTextId, elements, fontSize, selectedColor, socket, roomId, textContextMenu, textFont, textColor]);
+    
     useEffect(() => {
       if (!selectedId || currentTool !== "select") {
         transformerRef.current.nodes([]);
@@ -308,25 +285,15 @@ const Whiteboard = forwardRef(
           if (element.type === "text") {
             transformerRef.current.keepRatio(false);
             transformerRef.current.enabledAnchors([
-              "top-left",
-              "top-right",
-              "bottom-left",
-              "bottom-right",
-              "top-center",
-              "bottom-center",
-              "middle-left",
-              "middle-right",
+              "top-left", "top-right", "bottom-left", "bottom-right",
+              "top-center", "bottom-center", "middle-left", "middle-right"
             ]);
             transformerRef.current.borderEnabled(true);
             transformerRef.current.resizeEnabled(true);
           } else {
-            const keepRatio = [
-              "circle",
-              "square",
-              "triangle",
-              "hexagon",
-              "pentagon",
-            ].includes(element.type);
+            const keepRatio = ["circle", "square", "triangle", "hexagon", "pentagon"].includes(
+              element.type
+            );
             transformerRef.current.keepRatio(keepRatio);
             transformerRef.current.enabledAnchors(
               keepRatio
@@ -339,7 +306,7 @@ const Whiteboard = forwardRef(
         transformerRef.current.getLayer().batchDraw();
       }
     }, [selectedId, currentTool, elements]);
-
+    
     useEffect(() => {
       const tr = transformerRef.current;
       if (tr) {
@@ -384,13 +351,8 @@ const Whiteboard = forwardRef(
             const scaleY = node.scaleY();
             const avgScale = (scaleX + scaleY) / 2;
             const currentFontSize = element.fontSize || fontSize;
-            const newFontSize = Math.max(
-              12,
-              Math.min(200, currentFontSize * avgScale)
-            );
-            const currentWidth =
-              element.width ||
-              (element.text?.length || 0) * (currentFontSize * 0.6);
+            const newFontSize = Math.max(12, Math.min(200, currentFontSize * avgScale));
+            const currentWidth = element.width || (element.text?.length || 0) * (currentFontSize * 0.6);
             const currentHeight = element.height || currentFontSize * 1.2;
             const newWidth = currentWidth * scaleX;
             const newHeight = currentHeight * scaleY;
@@ -408,39 +370,19 @@ const Whiteboard = forwardRef(
             // For line, freehand, eraser, triangle, hexagon, pentagon
             const originalPoints = node.points();
             // Guard against undefined or invalid points
-            if (
-              !originalPoints ||
-              !Array.isArray(originalPoints) ||
-              originalPoints.length === 0
-            ) {
+            if (!originalPoints || !Array.isArray(originalPoints) || originalPoints.length === 0) {
               return;
             }
-
-            const shouldKeepRatio = [
-              "circle",
-              "square",
-              "triangle",
-              "hexagon",
-              "pentagon",
-            ].includes(element.type);
-            const isRegularShape = ["triangle", "hexagon", "pentagon"].includes(
-              element.type
-            );
-
+            
+            const shouldKeepRatio = ["circle", "square", "triangle", "hexagon", "pentagon"].includes(element.type);
+            const isRegularShape = ["triangle", "hexagon", "pentagon"].includes(element.type);
+            
             if (isRegularShape && shouldKeepRatio) {
               // For regular shapes, apply uniform scaling from centroid of points
-              const uniformScale = Math.max(
-                Math.abs(node.scaleX()),
-                Math.abs(node.scaleY())
-              );
-              let sumX = 0,
-                sumY = 0,
-                count = 0;
+              const uniformScale = Math.max(Math.abs(node.scaleX()), Math.abs(node.scaleY()));
+              let sumX = 0, sumY = 0, count = 0;
               for (let i = 0; i < originalPoints.length; i += 2) {
-                if (
-                  originalPoints[i] !== undefined &&
-                  originalPoints[i + 1] !== undefined
-                ) {
+                if (originalPoints[i] !== undefined && originalPoints[i + 1] !== undefined) {
                   sumX += originalPoints[i];
                   sumY += originalPoints[i + 1];
                   count++;
@@ -450,16 +392,10 @@ const Whiteboard = forwardRef(
               const centerY = count > 0 ? sumY / count : 0;
               const newPoints = [];
               for (let i = 0; i < originalPoints.length; i += 2) {
-                if (
-                  originalPoints[i] !== undefined &&
-                  originalPoints[i + 1] !== undefined
-                ) {
+                if (originalPoints[i] !== undefined && originalPoints[i + 1] !== undefined) {
                   const dx = originalPoints[i] - centerX;
                   const dy = originalPoints[i + 1] - centerY;
-                  newPoints.push(
-                    centerX + dx * uniformScale,
-                    centerY + dy * uniformScale
-                  );
+                  newPoints.push(centerX + dx * uniformScale, centerY + dy * uniformScale);
                 }
               }
               updatedAttrs = {
@@ -474,10 +410,7 @@ const Whiteboard = forwardRef(
               const transform = node.getTransform();
               const newPoints = [];
               for (let i = 0; i < originalPoints.length; i += 2) {
-                if (
-                  originalPoints[i] !== undefined &&
-                  originalPoints[i + 1] !== undefined
-                ) {
+                if (originalPoints[i] !== undefined && originalPoints[i + 1] !== undefined) {
                   const pt = transform.point({
                     x: originalPoints[i],
                     y: originalPoints[i + 1],
@@ -504,7 +437,7 @@ const Whiteboard = forwardRef(
             roomId,
             elementId: selectedId,
             updatedAttrs,
-            userId: currentUser?.id,
+            userId: currentUser?.id
           });
           // Reset node transforms
           node.scaleX(1);
@@ -542,13 +475,12 @@ const Whiteboard = forwardRef(
 
       const handleRemoteDrawStart = (element) => {
         // Only add if it's from another user (or if currentUser is not set yet, accept all)
-        const isFromOtherUser =
-          !currentUser || (element.userId && element.userId !== currentUser.id);
+        const isFromOtherUser = !currentUser || (element.userId && element.userId !== currentUser.id);
         if (isFromOtherUser) {
-          console.log("Remote DRAW_START received:", element);
+          console.log('Remote DRAW_START received:', element);
           setElements((prev) => {
             // Check if element already exists to avoid duplicates
-            if (prev.find((el) => el.id === element.id)) {
+            if (prev.find(el => el.id === element.id)) {
               return prev;
             }
             return [...prev, element];
@@ -559,26 +491,21 @@ const Whiteboard = forwardRef(
       const handleRemoteDrawMove = (data) => {
         // data should have { elementId, point, userId }
         if (!data.elementId || !data.point) return;
-
+        
         // Skip if it's from current user
         if (currentUser && data.userId === currentUser.id) return;
-
-        console.log("Remote DRAW_MOVE received:", data);
+        
+        console.log('Remote DRAW_MOVE received:', data);
         setElements((prev) => {
-          const elementIndex = prev.findIndex((el) => el.id === data.elementId);
+          const elementIndex = prev.findIndex(el => el.id === data.elementId);
           if (elementIndex === -1) return prev;
-
+          
           const updated = [...prev];
           const element = updated[elementIndex];
-          if (
-            element &&
-            (element.type === SHAPES.FREEHAND || element.type === SHAPES.ERASER)
-          ) {
+          if (element && (element.type === SHAPES.FREEHAND || element.type === SHAPES.ERASER)) {
             // data.point is already [x, y], and element.points is [[x, y], [x, y], ...]
             // So we just need to append data.point to the points array
-            const currentPoints = Array.isArray(element.points)
-              ? element.points
-              : [];
+            const currentPoints = Array.isArray(element.points) ? element.points : [];
             updated[elementIndex] = {
               ...element,
               points: [...currentPoints, data.point],
@@ -591,7 +518,7 @@ const Whiteboard = forwardRef(
       const handleRemoteDrawEnd = (data) => {
         // Handle draw end if needed
         if (!currentUser || (data.userId && data.userId !== currentUser.id)) {
-          console.log("Remote DRAW_END received:", data);
+          console.log('Remote DRAW_END received:', data);
           setDebugInfo("Remote drawing completed");
         }
       };
@@ -599,85 +526,62 @@ const Whiteboard = forwardRef(
       const handleShapeUpdate = (data) => {
         // Handle shape updates from other users (like AI shape recognition)
         if (!currentUser || (data.userId && data.userId !== currentUser.id)) {
-          console.log("Remote SHAPE_UPDATE received:", data);
+          console.log('Remote SHAPE_UPDATE received:', data);
           setElements((prev) => {
-            const elementIndex = prev.findIndex(
-              (el) => el.id === data.elementId
-            );
+            const elementIndex = prev.findIndex(el => el.id === data.elementId);
             if (elementIndex === -1) {
               // Element doesn't exist yet, might be a new shape recognition
               // This shouldn't happen, but handle it gracefully
-              console.warn(
-                "Shape update received for non-existent element:",
-                data.elementId
-              );
+              console.warn('Shape update received for non-existent element:', data.elementId);
               return prev;
             }
-
+            
             const existingElement = prev[elementIndex];
             const updated = [...prev];
-
+            
             // If the type is changing (e.g., from freehand to circle), completely replace the element
             // This is important for AI shape recognition which changes the entire element structure
-            if (
-              data.updatedAttrs.type &&
-              data.updatedAttrs.type !== existingElement.type
-            ) {
+            if (data.updatedAttrs.type && data.updatedAttrs.type !== existingElement.type) {
               // Complete replacement for shape recognition
               // Create a new element with all properties from updatedAttrs, preserving id and ensuring color/strokeWidth
               const newElement = {
                 id: existingElement.id,
                 ...data.updatedAttrs,
                 // Ensure color and strokeWidth are set (use updatedAttrs if provided, otherwise keep existing)
-                color:
-                  data.updatedAttrs.color !== undefined
-                    ? data.updatedAttrs.color
-                    : existingElement.color,
-                strokeWidth:
-                  data.updatedAttrs.strokeWidth !== undefined
-                    ? data.updatedAttrs.strokeWidth
-                    : existingElement.strokeWidth,
+                color: data.updatedAttrs.color !== undefined ? data.updatedAttrs.color : existingElement.color,
+                strokeWidth: data.updatedAttrs.strokeWidth !== undefined ? data.updatedAttrs.strokeWidth : existingElement.strokeWidth,
               };
-
+              
               // Remove properties that shouldn't exist for the new shape type
-              if (newElement.type === "circle") {
+              if (newElement.type === 'circle') {
                 // Circle uses x, y, radius - remove points, width, height, side
                 delete newElement.points;
                 delete newElement.width;
                 delete newElement.height;
                 delete newElement.side;
-              } else if (newElement.type === "rectangle") {
+              } else if (newElement.type === 'rectangle') {
                 // Rectangle uses x, y, width, height - remove points, radius, side
                 delete newElement.points;
                 delete newElement.radius;
                 delete newElement.side;
-              } else if (newElement.type === "square") {
+              } else if (newElement.type === 'square') {
                 // Square uses x, y, side - remove points, radius, width, height
                 delete newElement.points;
                 delete newElement.radius;
                 delete newElement.width;
                 delete newElement.height;
-              } else if (
-                newElement.type === "triangle" ||
-                newElement.type === "hexagon" ||
-                newElement.type === "pentagon" ||
-                newElement.type === "line"
-              ) {
+              } else if (newElement.type === 'triangle' || 
+                         newElement.type === 'hexagon' || 
+                         newElement.type === 'pentagon' ||
+                         newElement.type === 'line') {
                 // These use points - remove other shape properties
                 delete newElement.radius;
                 delete newElement.width;
                 delete newElement.height;
                 delete newElement.side;
               }
-
-              console.log(
-                "Shape type changed from",
-                existingElement.type,
-                "to",
-                newElement.type,
-                ":",
-                newElement
-              );
+              
+              console.log('Shape type changed from', existingElement.type, 'to', newElement.type, ':', newElement);
               updated[elementIndex] = newElement;
             } else {
               // Partial update (like transform, color change, etc.)
@@ -686,14 +590,14 @@ const Whiteboard = forwardRef(
                 ...data.updatedAttrs,
               };
             }
-
+            
             return updated;
           });
         }
       };
 
       const handleClearBoard = () => {
-        console.log("Remote CLEAR_BOARD received");
+        console.log('Remote CLEAR_BOARD received');
         setElements([]);
         setDebugInfo("Board cleared by another user");
       };
@@ -716,11 +620,11 @@ const Whiteboard = forwardRef(
     const handleShapeDrop = (shapeType, x, y) => {
       const baseSize = 120;
       let newElement;
-
+      
       const centerX = x;
       const centerY = y;
-
-      switch (shapeType) {
+      
+      switch(shapeType) {
         case "circle":
           newElement = {
             id: Date.now(),
@@ -760,12 +664,9 @@ const Whiteboard = forwardRef(
             id: Date.now(),
             type: "triangle",
             points: [
-              centerX - baseSize / 2,
-              centerY + baseSize / 2, // bottom-left
-              centerX + baseSize / 2,
-              centerY + baseSize / 2, // bottom-right
-              centerX,
-              centerY - baseSize / 2, // top apex
+              centerX - baseSize / 2, centerY + baseSize / 2, // bottom-left
+              centerX + baseSize / 2, centerY + baseSize / 2, // bottom-right
+              centerX, centerY - baseSize / 2, // top apex
             ],
             color: selectedColor,
             strokeWidth: pencilSize,
@@ -806,12 +707,12 @@ const Whiteboard = forwardRef(
         default:
           return;
       }
-
+      
       setElements((prev) => [...prev, newElement]);
-      socket.emit(EVENTS.DRAW_START, {
-        roomId,
+      socket.emit(EVENTS.DRAW_START, { 
+        roomId, 
         element: newElement,
-        userId: currentUser?.id,
+        userId: currentUser?.id 
       });
       setDraggedShape(null);
       setDebugInfo(`Added ${shapeType}`);
@@ -864,7 +765,7 @@ const Whiteboard = forwardRef(
         }
         return;
       }
-
+      
       if (currentTool === "text") {
         e.evt?.stopPropagation();
         e.evt?.preventDefault();
@@ -872,17 +773,15 @@ const Whiteboard = forwardRef(
         if (!stage) return;
         const pos = stage.getPointerPosition();
         if (!pos) return;
-
+        
         const clickedOn = e.target;
         let targetShape = null;
         let shapeCenter = null;
-
+        
         if (clickedOn.getClassName() === "Text") {
           const shapeId = clickedOn.name();
           if (shapeId) {
-            const textElement = elements.find(
-              (el) => el.id.toString() === shapeId
-            );
+            const textElement = elements.find((el) => el.id.toString() === shapeId);
             if (textElement) {
               setEditingTextId(textElement.id);
               setTextCursor({
@@ -897,12 +796,8 @@ const Whiteboard = forwardRef(
             }
           }
         }
-
-        if (
-          clickedOn.getClassName() !== "Stage" &&
-          clickedOn.getClassName() !== "Layer" &&
-          clickedOn.getClassName() !== "Text"
-        ) {
+        
+        if (clickedOn.getClassName() !== "Stage" && clickedOn.getClassName() !== "Layer" && clickedOn.getClassName() !== "Text") {
           const shapeId = clickedOn.name();
           if (shapeId) {
             targetShape = elements.find((el) => el.id.toString() === shapeId);
@@ -910,21 +805,17 @@ const Whiteboard = forwardRef(
               const shapeBounds = clickedOn.getClientRect();
               const clickX = pos.x;
               const clickY = pos.y;
-
+              
               if (targetShape.type === "circle") {
                 const distance = Math.sqrt(
-                  Math.pow(clickX - targetShape.x, 2) +
-                    Math.pow(clickY - targetShape.y, 2)
+                  Math.pow(clickX - targetShape.x, 2) + Math.pow(clickY - targetShape.y, 2)
                 );
                 if (distance <= targetShape.radius) {
                   shapeCenter = { x: clickX, y: clickY };
                 } else {
                   shapeCenter = { x: targetShape.x, y: targetShape.y };
                 }
-              } else if (
-                targetShape.type === "rectangle" ||
-                targetShape.type === "square"
-              ) {
+              } else if (targetShape.type === "rectangle" || targetShape.type === "square") {
                 const width = targetShape.width || targetShape.side;
                 const height = targetShape.height || targetShape.side;
                 if (
@@ -942,9 +833,7 @@ const Whiteboard = forwardRef(
                 }
               } else if (Array.isArray(targetShape.points)) {
                 const points = normalizePoints(targetShape.points);
-                let sumX = 0,
-                  sumY = 0,
-                  count = 0;
+                let sumX = 0, sumY = 0, count = 0;
                 for (let i = 0; i < points.length; i += 2) {
                   sumX += points[i];
                   sumY += points[i + 1];
@@ -952,7 +841,7 @@ const Whiteboard = forwardRef(
                 }
                 const centerX = count > 0 ? sumX / count : pos.x;
                 const centerY = count > 0 ? sumY / count : pos.y;
-
+                
                 let isInside = false;
                 let j = points.length - 2;
                 for (let i = 0; i < points.length; i += 2) {
@@ -961,14 +850,14 @@ const Whiteboard = forwardRef(
                   const xj = points[j];
                   const yj = points[j + 1];
                   if (
-                    yi > clickY !== yj > clickY &&
-                    clickX < ((xj - xi) * (clickY - yi)) / (yj - yi) + xi
+                    ((yi > clickY) !== (yj > clickY)) &&
+                    (clickX < ((xj - xi) * (clickY - yi)) / (yj - yi) + xi)
                   ) {
                     isInside = !isInside;
                   }
                   j = i;
                 }
-
+                
                 if (isInside) {
                   shapeCenter = { x: clickX, y: clickY };
                 } else {
@@ -978,10 +867,10 @@ const Whiteboard = forwardRef(
             }
           }
         }
-
+        
         const textX = shapeCenter ? shapeCenter.x : pos.x;
         const textY = shapeCenter ? shapeCenter.y : pos.y;
-
+        
         setTextCursor({
           x: textX,
           y: textY,
@@ -989,12 +878,10 @@ const Whiteboard = forwardRef(
           shapeId: targetShape ? targetShape.id : null,
         });
         setEditingTextId(null);
-        setDebugInfo(
-          `Text cursor at (${Math.round(textX)}, ${Math.round(textY)})`
-        );
+        setDebugInfo(`Text cursor at (${Math.round(textX)}, ${Math.round(textY)})`);
         return;
       }
-
+      
       const stage = e.target.getStage();
       const pos = stage.getPointerPosition();
 
@@ -1012,10 +899,10 @@ const Whiteboard = forwardRef(
 
       setElements((prev) => [...prev, newElement]);
       currentDrawingElementIdRef.current = newElement.id;
-      socket.emit(EVENTS.DRAW_START, {
-        roomId,
+      socket.emit(EVENTS.DRAW_START, { 
+        roomId, 
         element: newElement,
-        userId: currentUser?.id,
+        userId: currentUser?.id 
       });
       setDebugInfo(isErasing ? "Erasing..." : `Drawing with ${selectedColor}`);
     };
@@ -1038,9 +925,7 @@ const Whiteboard = forwardRef(
           lastElement.type === SHAPES.ERASER
         ) {
           // Ensure points is an array before spreading
-          const currentPoints = Array.isArray(lastElement.points)
-            ? lastElement.points
-            : [];
+          const currentPoints = Array.isArray(lastElement.points) ? lastElement.points : [];
           const updatedElement = {
             ...lastElement,
             points: [...currentPoints, [pos.x, pos.y]],
@@ -1060,7 +945,7 @@ const Whiteboard = forwardRef(
         roomId,
         elementId: currentDrawingElementIdRef.current,
         point: [pos.x, pos.y],
-        userId: currentUser?.id,
+        userId: currentUser?.id
       });
     };
 
@@ -1077,17 +962,13 @@ const Whiteboard = forwardRef(
           lastElement.type !== SHAPES.FREEHAND ||
           !lastElement.points ||
           !Array.isArray(lastElement.points) ||
-          lastElement.points.length < 20 // Increased minimum points to avoid recognizing short strokes/text
+          lastElement.points.length < 20  // Increased minimum points to avoid recognizing short strokes/text
         ) {
           return prev;
         }
         // Ensure points array is valid before passing to AI
         const validPoints = lastElement.points.filter(
-          (p) =>
-            Array.isArray(p) &&
-            p.length >= 2 &&
-            typeof p[0] === "number" &&
-            typeof p[1] === "number"
+          (p) => Array.isArray(p) && p.length >= 2 && typeof p[0] === 'number' && typeof p[1] === 'number'
         );
         // Require at least 20 valid points for shape recognition
         // This filters out short text strokes and small doodles
@@ -1095,34 +976,27 @@ const Whiteboard = forwardRef(
           return prev;
         }
         // Debug: log point positions to check if coordinates are correct
-        const minX = Math.min(...validPoints.map((p) => p[0]));
-        const maxX = Math.max(...validPoints.map((p) => p[0]));
-        const minY = Math.min(...validPoints.map((p) => p[1]));
-        const maxY = Math.max(...validPoints.map((p) => p[1]));
-        console.log("Shape recognition attempt:", {
+        const minX = Math.min(...validPoints.map(p => p[0]));
+        const maxX = Math.max(...validPoints.map(p => p[0]));
+        const minY = Math.min(...validPoints.map(p => p[1]));
+        const maxY = Math.max(...validPoints.map(p => p[1]));
+        console.log('Shape recognition attempt:', {
           pointCount: validPoints.length,
           bounds: { minX, maxX, minY, maxY },
           width: maxX - minX,
           height: maxY - minY,
-          stageSize,
+          stageSize
         });
-
+        
         const aiResult = aiModelLoaded
           ? aiShapeRecognition.recognizeShape(validPoints)
           : null;
         const recognized = aiResult?.features;
         if (!recognized) {
-          console.log(
-            "Shape not recognized - likely text or not geometric enough"
-          );
+          console.log('Shape not recognized - likely text or not geometric enough');
           return prev;
         }
-        console.log(
-          "Shape recognized:",
-          recognized.type,
-          "at position:",
-          recognized
-        );
+        console.log('Shape recognized:', recognized.type, 'at position:', recognized);
         const newShape = {
           id: lastElement.id,
           ...recognized,
@@ -1144,15 +1018,15 @@ const Whiteboard = forwardRef(
           roomId,
           elementId: id,
           updatedAttrs,
-          userId: currentUser?.id,
+          userId: currentUser?.id
         });
       }
 
       /* setCurrentStroke(null); */
-      socket.emit(EVENTS.DRAW_END, {
+      socket.emit(EVENTS.DRAW_END, { 
         roomId,
         elementId: currentDrawingElementIdRef.current,
-        userId: currentUser?.id,
+        userId: currentUser?.id 
       });
       currentDrawingElementIdRef.current = null;
       setDebugInfo("Drawing ended");
@@ -1198,7 +1072,7 @@ const Whiteboard = forwardRef(
       "#ef4444", // red-500
       "#ec4899", // pink-500
       "#a855f7", // violet-500
-      "#ffffff", // white
+      "#ffffff"  // white
     ];
 
     const canvasPresetColors = [
@@ -1221,11 +1095,7 @@ const Whiteboard = forwardRef(
       if (points.length === 0) return [];
       // Check if first element exists and is an array before accessing it
       const firstElement = points[0];
-      if (
-        firstElement !== undefined &&
-        firstElement !== null &&
-        Array.isArray(firstElement)
-      ) {
+      if (firstElement !== undefined && firstElement !== null && Array.isArray(firstElement)) {
         return points.flat();
       }
       return points;
@@ -1280,13 +1150,13 @@ const Whiteboard = forwardRef(
                 🔍
               </button>
               <button
-                className={`tool-btn ${currentTool === "text" ? "active" : ""}`}
+                className={`tool-btn ${
+                  currentTool === "text" ? "active" : ""
+                }`}
                 onClick={() => {
                   console.log("Text tool button clicked");
                   setCurrentTool("text");
-                  setDebugInfo(
-                    "Text tool selected - Click on canvas to add text"
-                  );
+                  setDebugInfo("Text tool selected - Click on canvas to add text");
                 }}
                 title="Text Tool"
               >
@@ -1353,16 +1223,7 @@ const Whiteboard = forwardRef(
                 onDragEnd={handlePaletteDragEnd}
                 title="Circle"
               >
-                <svg viewBox="0 0 24 24" className="shape-icon">
-                  <circle
-                    cx="12"
-                    cy="12"
-                    r="9"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                  />
-                </svg>
+                <svg viewBox="0 0 24 24" className="shape-icon"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" strokeWidth="2"/></svg>
               </div>
               <div
                 className="shape-item"
@@ -1371,17 +1232,7 @@ const Whiteboard = forwardRef(
                 onDragEnd={handlePaletteDragEnd}
                 title="Square"
               >
-                <svg viewBox="0 0 24 24" className="shape-icon">
-                  <rect
-                    x="5"
-                    y="5"
-                    width="14"
-                    height="14"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                  />
-                </svg>
+                <svg viewBox="0 0 24 24" className="shape-icon"><rect x="5" y="5" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2"/></svg>
               </div>
               <div
                 className="shape-item"
@@ -1390,17 +1241,7 @@ const Whiteboard = forwardRef(
                 onDragEnd={handlePaletteDragEnd}
                 title="Rectangle"
               >
-                <svg viewBox="0 0 24 24" className="shape-icon">
-                  <rect
-                    x="3"
-                    y="7"
-                    width="18"
-                    height="10"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                  />
-                </svg>
+                <svg viewBox="0 0 24 24" className="shape-icon"><rect x="3" y="7" width="18" height="10" fill="none" stroke="currentColor" strokeWidth="2"/></svg>
               </div>
               <div
                 className="shape-item"
@@ -1409,14 +1250,7 @@ const Whiteboard = forwardRef(
                 onDragEnd={handlePaletteDragEnd}
                 title="Triangle"
               >
-                <svg viewBox="0 0 24 24" className="shape-icon">
-                  <polygon
-                    points="12,4 20,18 4,18"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                  />
-                </svg>
+                <svg viewBox="0 0 24 24" className="shape-icon"><polygon points="12,4 20,18 4,18" fill="none" stroke="currentColor" strokeWidth="2"/></svg>
               </div>
               <div
                 className="shape-item"
@@ -1425,14 +1259,7 @@ const Whiteboard = forwardRef(
                 onDragEnd={handlePaletteDragEnd}
                 title="Hexagon"
               >
-                <svg viewBox="0 0 24 24" className="shape-icon">
-                  <polygon
-                    points="8,4 16,4 20,12 16,20 8,20 4,12"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                  />
-                </svg>
+                <svg viewBox="0 0 24 24" className="shape-icon"><polygon points="8,4 16,4 20,12 16,20 8,20 4,12" fill="none" stroke="currentColor" strokeWidth="2"/></svg>
               </div>
               <div
                 className="shape-item"
@@ -1441,14 +1268,7 @@ const Whiteboard = forwardRef(
                 onDragEnd={handlePaletteDragEnd}
                 title="Pentagon"
               >
-                <svg viewBox="0 0 24 24" className="shape-icon">
-                  <polygon
-                    points="12,3 20,9 17,20 7,20 4,9"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                  />
-                </svg>
+                <svg viewBox="0 0 24 24" className="shape-icon"><polygon points="12,3 20,9 17,20 7,20 4,9" fill="none" stroke="currentColor" strokeWidth="2"/></svg>
               </div>
             </div>
           </div>
@@ -1643,12 +1463,7 @@ const Whiteboard = forwardRef(
           </div>
         )}
 
-        <div
-          className="stage-container"
-          ref={stageContainerRef}
-          onDragOver={handleContainerDragOver}
-          onDrop={handleContainerDrop}
-        >
+        <div className="stage-container" ref={stageContainerRef} onDragOver={handleContainerDragOver} onDrop={handleContainerDrop}>
           <Stage
             width={stageSize.width}
             height={stageSize.height}
@@ -1721,19 +1536,10 @@ const Whiteboard = forwardRef(
                 }
                 if (element.type === "rectangle") {
                   // Validate rectangle properties before rendering
-                  if (
-                    !element.x ||
-                    !element.y ||
-                    !element.width ||
-                    !element.height ||
-                    isNaN(element.x) ||
-                    isNaN(element.y) ||
-                    isNaN(element.width) ||
-                    isNaN(element.height) ||
-                    element.width <= 0 ||
-                    element.height <= 0
-                  ) {
-                    console.warn("Invalid rectangle element:", element);
+                  if (!element.x || !element.y || !element.width || !element.height ||
+                      isNaN(element.x) || isNaN(element.y) || isNaN(element.width) || isNaN(element.height) ||
+                      element.width <= 0 || element.height <= 0) {
+                    console.warn('Invalid rectangle element:', element);
                     return null;
                   }
                   return (
@@ -1812,7 +1618,7 @@ const Whiteboard = forwardRef(
                 if (element.type === "text") {
                   const isEditing = editingTextId === element.id;
                   const displayText = element.text || "";
-
+                  
                   return (
                     <React.Fragment key={element.id}>
                       <Text
@@ -1848,16 +1654,10 @@ const Whiteboard = forwardRef(
                       {isEditing && cursorBlink && (
                         <Line
                           points={[
-                            element.x +
-                              displayText.length *
-                                (element.fontSize || fontSize) *
-                                0.6,
+                            element.x + (displayText.length * (element.fontSize || fontSize) * 0.6),
                             element.y,
-                            element.x +
-                              displayText.length *
-                                (element.fontSize || fontSize) *
-                                0.6,
-                            element.y + (element.fontSize || fontSize),
+                            element.x + (displayText.length * (element.fontSize || fontSize) * 0.6),
+                            element.y + (element.fontSize || fontSize)
                           ]}
                           stroke={element.color || selectedColor}
                           strokeWidth={2}
@@ -1881,12 +1681,10 @@ const Whiteboard = forwardRef(
                   {cursorBlink && (
                     <Line
                       points={[
-                        textCursor.x +
-                          (textCursor.text || "").length * fontSize * 0.6,
+                        textCursor.x + ((textCursor.text || "").length * fontSize * 0.6),
                         textCursor.y,
-                        textCursor.x +
-                          (textCursor.text || "").length * fontSize * 0.6,
-                        textCursor.y + fontSize,
+                        textCursor.x + ((textCursor.text || "").length * fontSize * 0.6),
+                        textCursor.y + fontSize
                       ]}
                       stroke={textColor}
                       strokeWidth={2}
@@ -1920,16 +1718,7 @@ const Whiteboard = forwardRef(
             >
               <div className="context-menu-header">
                 <h4>Text Options</h4>
-                <p
-                  style={{
-                    fontSize: "11px",
-                    color: "#666",
-                    margin: "4px 0 0 0",
-                    fontStyle: "italic",
-                  }}
-                >
-                  Press ↑ to open
-                </p>
+                <p style={{ fontSize: "11px", color: "#666", margin: "4px 0 0 0", fontStyle: "italic" }}>Press ↑ to open</p>
                 <button
                   className="close-btn"
                   onClick={() => setTextContextMenu(null)}
@@ -1937,7 +1726,7 @@ const Whiteboard = forwardRef(
                   ✕
                 </button>
               </div>
-
+              
               <div className="context-menu-section">
                 <label>Font Family</label>
                 <select
@@ -1978,20 +1767,10 @@ const Whiteboard = forwardRef(
                     className="color-picker"
                   />
                   <div className="preset-text-colors">
-                    {[
-                      "#000000",
-                      "#FF0000",
-                      "#00FF00",
-                      "#0000FF",
-                      "#FFFF00",
-                      "#FF00FF",
-                      "#00FFFF",
-                    ].map((color) => (
+                    {["#000000", "#FF0000", "#00FF00", "#0000FF", "#FFFF00", "#FF00FF", "#00FFFF"].map((color) => (
                       <button
                         key={color}
-                        className={`preset-color-btn ${
-                          textColor === color ? "selected" : ""
-                        }`}
+                        className={`preset-color-btn ${textColor === color ? "selected" : ""}`}
                         style={{ backgroundColor: color }}
                         onClick={() => setTextColor(color)}
                         title={color}
@@ -2541,6 +2320,7 @@ const Whiteboard = forwardRef(
             transform: scale(1.05);
           }
         `}</style>
+
       </div>
     );
   }

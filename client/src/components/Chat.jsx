@@ -1,18 +1,18 @@
-import React, { useState, useEffect, useRef, useContext } from "react";
-import { SocketContext } from "../context/SocketContext";
-import { EVENTS } from "../utils/constants";
+import React, { useState, useEffect, useRef, useContext } from 'react';
+import { SocketContext } from '../context/SocketContext';
+import { EVENTS } from '../utils/constants';
 
 const Chat = ({ roomId, currentUser }) => {
   const socket = useContext(SocketContext);
   const [isOpen, setIsOpen] = useState(false);
   const [messages, setMessages] = useState([]);
-  const [inputMessage, setInputMessage] = useState("");
+  const [inputMessage, setInputMessage] = useState('');
   const messagesEndRef = useRef(null);
   const chatContainerRef = useRef(null);
 
   // Auto-scroll to bottom when new messages arrive
   const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
 
   useEffect(() => {
@@ -47,11 +47,11 @@ const Chat = ({ roomId, currentUser }) => {
     };
 
     socket.emit(EVENTS.MESSAGE_SEND, messageData);
-    setInputMessage("");
+    setInputMessage('');
   };
 
   const handleKeyPress = (e) => {
-    if (e.key === "Enter" && !e.shiftKey) {
+    if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       handleSendMessage(e);
     }
@@ -98,18 +98,14 @@ const Chat = ({ roomId, currentUser }) => {
                 return (
                   <div
                     key={index}
-                    className={`chat-message ${
-                      isOwnMessage ? "own-message" : ""
-                    }`}
+                    className={`chat-message ${isOwnMessage ? 'own-message' : ''}`}
                   >
                     <div className="message-header">
-                      <span className="message-author">
-                        {msg.userName || "Anonymous"}
-                      </span>
+                      <span className="message-author">{msg.userName || 'Anonymous'}</span>
                       <span className="message-time">
                         {new Date(msg.timestamp).toLocaleTimeString([], {
-                          hour: "2-digit",
-                          minute: "2-digit",
+                          hour: '2-digit',
+                          minute: '2-digit',
                         })}
                       </span>
                     </div>
@@ -131,11 +127,7 @@ const Chat = ({ roomId, currentUser }) => {
               onKeyPress={handleKeyPress}
               autoFocus
             />
-            <button
-              type="submit"
-              className="chat-send-btn"
-              disabled={!inputMessage.trim()}
-            >
+            <button type="submit" className="chat-send-btn" disabled={!inputMessage.trim()}>
               Send
             </button>
           </form>
@@ -407,3 +399,4 @@ const Chat = ({ roomId, currentUser }) => {
 };
 
 export default Chat;
+
