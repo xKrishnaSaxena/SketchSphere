@@ -1,7 +1,15 @@
 class MinimalAIShapeRecognition {
   constructor() {
     this.isReady = false;
-    this.shapeClasses = ["line", "circle", "rectangle", "square", "triangle", "hexagon", "pentagon"];
+    this.shapeClasses = [
+      "line",
+      "circle",
+      "rectangle",
+      "square",
+      "triangle",
+      "hexagon",
+      "pentagon",
+    ];
   }
 
   async initialize() {
@@ -53,8 +61,8 @@ class MinimalAIShapeRecognition {
           prev = smoothed[Math.max(0, i - 2)];
           next = smoothed[Math.min(n - 1, i + 2)];
         }
-        const x = (prev[0] * 0.25 + p[0] * 0.5 + next[0] * 0.25);
-        const y = (prev[1] * 0.25 + p[1] * 0.5 + next[1] * 0.25);
+        const x = prev[0] * 0.25 + p[0] * 0.5 + next[0] * 0.25;
+        const y = prev[1] * 0.25 + p[1] * 0.5 + next[1] * 0.25;
         return [x, y];
       });
     }
@@ -71,38 +79,40 @@ class MinimalAIShapeRecognition {
       smoothed[smoothed.length - 1][1] - smoothed[0][1]
     );
 
-    const aspect = Math.max(width, height) / Math.max(1, Math.min(width, height));
-    const straightness = straightDistance > 0 ? pathLength / straightDistance : 1;
+    const aspect =
+      Math.max(width, height) / Math.max(1, Math.min(width, height));
+    const straightness =
+      straightDistance > 0 ? pathLength / straightDistance : 1;
     const squareness = 1 - Math.abs(width - height) / Math.max(width, height);
 
     let corners = 0;
     const cornerAngles = [];
     const cornerIndices = [];
     const endLimit = isClosed ? n : n - 1;
-    
+
     const lookahead = Math.max(2, Math.floor(n / 20));
-    
+
     for (let i = lookahead; i < endLimit - lookahead; i++) {
       const dx1 = smoothed[i][0] - smoothed[i - lookahead][0];
       const dy1 = smoothed[i][1] - smoothed[i - lookahead][1];
       const dx2 = smoothed[(i + lookahead) % n][0] - smoothed[i][0];
       const dy2 = smoothed[(i + lookahead) % n][1] - smoothed[i][1];
-      
+
       const dist1 = Math.hypot(dx1, dy1);
       const dist2 = Math.hypot(dx2, dy2);
-      
+
       // Skip if segments too short (noise)
       if (dist1 < 5 || dist2 < 5) continue;
-      
+
       let angleDiff = Math.atan2(dy2, dx2) - Math.atan2(dy1, dx1);
-      
+
       // Normalize to [-π, π]
       while (angleDiff > Math.PI) angleDiff -= 2 * Math.PI;
       while (angleDiff < -Math.PI) angleDiff += 2 * Math.PI;
-      
+
       // Convert to absolute angle change
       const angle = Math.abs(angleDiff);
-      
+
       // Stricter corner detection: require significant angle change
       if (angle > Math.PI / 4 && angle < (3 * Math.PI) / 4) {
         // Check if this is a distinct corner (not too close to previous)
@@ -112,12 +122,13 @@ class MinimalAIShapeRecognition {
             smoothed[i][0] - smoothed[idx][0],
             smoothed[i][1] - smoothed[idx][1]
           );
-          if (dist < Math.min(width, height) / 6) { // slightly stricter spacing
+          if (dist < Math.min(width, height) / 6) {
+            // slightly stricter spacing
             isDistinct = false;
             break;
           }
         }
-        
+
         if (isDistinct) {
           corners++;
           cornerAngles.push(angle);
@@ -131,21 +142,22 @@ class MinimalAIShapeRecognition {
     const centerY = (minY + maxY) / 2;
     const avgRadius = (width + height) / 4;
     let radiusVariance = 0;
-    
+
     if (isClosed) {
-      smoothed.forEach(p => {
+      smoothed.forEach((p) => {
         const distFromCenter = Math.hypot(p[0] - centerX, p[1] - centerY);
         radiusVariance += Math.abs(distFromCenter - avgRadius);
       });
       radiusVariance /= smoothed.length;
     }
-    const circularity = isClosed && avgRadius > 0 ? 1 - (radiusVariance / avgRadius) : 0;
+    const circularity =
+      isClosed && avgRadius > 0 ? 1 - radiusVariance / avgRadius : 0;
 
     // New: convexity and right-angle score (for squares/rectangles)
     let isConvex = 1;
     let rightAngleScore = 0;
     if (isClosed && cornerIndices.length >= 3) {
-      const verts = cornerIndices.map(idx => smoothed[idx]);
+      const verts = cornerIndices.map((idx) => smoothed[idx]);
       const m = verts.length;
       let lastSign = 0;
       for (let i = 0; i < m; i++) {
@@ -202,7 +214,7 @@ class MinimalAIShapeRecognition {
   // SHAPE RECOGNITION: ENHANCED CLASSIFICATION MODEL
   // ============================================================================
   // This method uses a weighted linear model to classify shapes based on extracted features:
-  // 
+  //
   // IMPROVEMENTS MADE:
   // 1. Stricter Classification Logic:
   //    - Uses exact corner count (rounded) for precise matching
@@ -228,7 +240,7 @@ class MinimalAIShapeRecognition {
   predictProbs(f) {
     // Much stricter thresholds for better precision
     const exactCorners = Math.round(f.corners);
-    
+
     // Line: high aspect ratio, low straightness, not closed, NO corners
     const zLine =
       3.0 * (f.aspect - 1) +
@@ -236,46 +248,51 @@ class MinimalAIShapeRecognition {
       (f.isClosed ? -3.0 : 2.0) -
       1.5 * exactCorners -
       2.5 * f.circularity;
-    
+
     // Circle: closed, high circularity, very few corners, aspect ratio ~1
+    // Made more lenient to allow hand-drawn circles with slight imperfections
     const zCircle =
-      1.8 * f.isClosed +
-      2.5 * f.circularity +
+      2.0 * f.isClosed +
+      3.0 * f.circularity +
       0.8 * f.squareness -
       0.8 * (f.aspect - 1) -
-      5.0 * Math.max(0, exactCorners) -
-      0.8 * Math.abs(exactCorners) -
-      (f.corners > 1 ? -3.0 : 0);
-    
-    // Triangle: closed, exactly 3 corners ONLY - highest priority when detected
+      3.0 * Math.max(0, exactCorners - 1) - // Allow up to 2-3 corners
+      0.5 * Math.abs(exactCorners) -
+      (f.corners > 3 ? -5.0 : 0); // Only heavily penalize if more than 3 corners
+
+    // Triangle: closed, exactly 3 corners ONLY - but must NOT be square/rect-like
+    // Heavily penalize if it has right angles or high squareness (indicates square/rect)
     const zTriangle =
       2.2 * f.isClosed +
-      (exactCorners === 3 ? 8.0 : 0) -
+      (exactCorners === 3 ? 6.0 : 0) - // Reduced from 8.0 to 6.0
       5.0 * Math.abs(3 - exactCorners) -
       2.0 * f.circularity -
-      1.0 * f.squareness +
+      3.0 * f.squareness - // Increased penalty for squareness
+      4.0 * f.rightAngleScore - // Heavily penalize right angles (squares/rects have these)
       0.5 * (f.isConvex ? 1 : -1);
-    
+
     // Square: closed, 4 corners, high squareness, aspect ratio ~1, LOW circularity, right angles
     const zSquare =
       1.5 * f.isClosed +
-      (exactCorners === 4 ? 3.5 : 0) +
-      3.0 * f.squareness +
-      (f.aspect <= 1.2 ? 3.0 * (1 - Math.abs(f.aspect - 1)) : -3.0) -
+      (exactCorners === 4 ? 5.0 : 0) + // Increased from 3.5 to 5.0
+      4.0 * f.squareness + // Increased weight
+      (f.aspect <= 1.2 ? 3.5 * (1 - Math.abs(f.aspect - 1)) : -3.0) -
       3.0 * f.circularity +
-      1.5 * f.rightAngleScore +
-      0.5 * (f.isConvex ? 1 : -1);
-    
+      2.0 * f.rightAngleScore + // Increased weight for right angles
+      0.5 * (f.isConvex ? 1 : -1) -
+      (exactCorners === 3 ? -2.0 : 0); // Penalize if it has 3 corners (might be triangle)
+
     // Rectangle: closed, 4 corners, LOW squareness, aspect ratio > 1.3, LOW circularity, right angles
     const zRect =
       1.5 * f.isClosed +
-      (exactCorners === 4 ? 3.5 : 0) +
-      (f.squareness < 0.8 ? 2.0 : -2.0) +
-      (f.aspect > 1.3 ? 2.0 * Math.min(f.aspect - 1, 3) : -3.0) -
+      (exactCorners === 4 ? 5.0 : 0) + // Increased from 3.5 to 5.0
+      (f.squareness < 0.8 ? 2.5 : -2.0) + // Increased weight
+      (f.aspect > 1.3 ? 2.5 * Math.min(f.aspect - 1, 3) : -3.0) -
       3.0 * f.circularity +
-      1.5 * f.rightAngleScore +
-      0.5 * (f.isConvex ? 1 : -1);
-    
+      2.0 * f.rightAngleScore + // Increased weight for right angles
+      0.5 * (f.isConvex ? 1 : -1) -
+      (exactCorners === 3 ? -2.0 : 0); // Penalize if it has 3 corners (might be triangle)
+
     // Hexagon: closed, exactly 6 corners
     const zHexagon =
       1.5 * f.isClosed +
@@ -283,7 +300,7 @@ class MinimalAIShapeRecognition {
       3.0 * Math.abs(6 - exactCorners) +
       0.5 * f.circularity -
       0.5 * Math.abs(f.aspect - 1);
-    
+
     // Pentagon: closed, exactly 5 corners
     const zPentagon =
       1.5 * f.isClosed +
@@ -292,18 +309,27 @@ class MinimalAIShapeRecognition {
       0.5 * f.circularity -
       0.5 * Math.abs(f.aspect - 1);
 
-    const logits = [zLine, zCircle, zRect, zSquare, zTriangle, zHexagon, zPentagon];
+    const logits = [
+      zLine,
+      zCircle,
+      zRect,
+      zSquare,
+      zTriangle,
+      zHexagon,
+      zPentagon,
+    ];
     const maxZ = Math.max(...logits);
     const exps = logits.map((z) => Math.exp(z - maxZ));
     const sum = exps.reduce((a, b) => a + b, 0);
     const probs = exps.map((e) => e / Math.max(1e-8, sum));
-    
-    // Additional precision check: require minimum confidence
+
+    // Additional precision check: require reasonable confidence (70% instead of 60%)
+    // This prevents false positives for text and random drawings while allowing shapes
     const maxProb = Math.max(...probs);
-    if (maxProb < 0.6) {
+    if (maxProb < 0.7) {
       return null;
     }
-    
+
     return probs;
   }
 
@@ -311,7 +337,7 @@ class MinimalAIShapeRecognition {
   // SHAPE RECOGNITION: MAIN RECOGNITION ENTRY POINT
   // ============================================================================
   // This is the main method called to recognize a shape from hand-drawn points:
-  // 
+  //
   // PROCESS FLOW:
   // 1. Checks if AI service is ready (currently always ready, but designed for future AI model)
   // 2. Extracts geometric features from the point array
@@ -328,30 +354,135 @@ class MinimalAIShapeRecognition {
   //
   // Returns: { type: string, confidence: number (0-1), features: shapeObject } or null
   recognizeShape(points) {
-    // If AI not ready or features invalid, try heuristic fallback
-    if (!this.isReady) {
-      const h = this.heuristicRecognize(points);
-      return h ? { type: h.type, confidence: 0.5, features: h } : null;
+    // Minimum size check - don't recognize very small drawings (likely text strokes)
+    if (points.length < 15) {
+      return null;
     }
+
     const f = this.extractFeatures(points);
     if (!f) {
-      const h = this.heuristicRecognize(points);
-      return h ? { type: h.type, confidence: 0.5, features: h } : null;
+      return null; // Don't use heuristic fallback for invalid features
     }
+
+    // Enhanced text detection - check for writing patterns
+    const pathComplexity = points.length / Math.max(f.width, f.height, 1);
+    const cornerDensity = f.corners / Math.max(f.width, f.height, 1);
+    const area = f.width * f.height;
+    const pathLength = points.length;
+
+    // Calculate direction changes (oscillation/wiggle) - text has many reversals
+    let directionReversals = 0;
+    let smallSegments = 0; // Count very short segments (characteristic of text)
+    for (let i = 1; i < Math.min(points.length - 1, 100); i++) {
+      const dx1 = points[i][0] - points[i - 1][0];
+      const dy1 = points[i][1] - points[i - 1][1];
+      const dx2 = points[i + 1][0] - points[i][0];
+      const dy2 = points[i + 1][1] - points[i][1];
+
+      const segLength = Math.hypot(dx1, dy1);
+      if (segLength < 3) {
+        // Very short segment
+        smallSegments++;
+      }
+
+      const dir1 = Math.atan2(dy1, dx1);
+      const dir2 = Math.atan2(dy2, dx2);
+      const angleDiff = Math.abs(dir2 - dir1);
+      const normalizedAngle = Math.min(angleDiff, 2 * Math.PI - angleDiff);
+
+      if (normalizedAngle > Math.PI / 2) {
+        // 90 degree change
+        directionReversals++;
+      }
+    }
+    const reversalRate = directionReversals / Math.min(points.length, 100);
+    const smallSegmentRate = smallSegments / Math.min(points.length, 100);
+
+    // Text detection criteria - more balanced to allow shapes but filter text:
+    // Focus on patterns that are very characteristic of text
+    // Don't filter circles - they might have some corners but high circularity
+    const isTextLike =
+      (pathComplexity > 0.4 && reversalRate > 0.15 && f.circularity < 0.6) || // Very high complexity AND many reversals AND not circular
+      (smallSegmentRate > 0.4 && f.corners > 8 && f.circularity < 0.5) || // Many tiny segments AND many corners AND not circular
+      (cornerDensity > 0.1 &&
+        f.circularity < 0.3 &&
+        f.squareness < 0.3 &&
+        area < 3000) || // Many corners, not geometric, small
+      (f.corners > 12 && !f.isClosed) || // Too many corners in open shape
+      (f.straightness > 2.5 && !f.isClosed && f.corners > 4); // Very wiggly open path with many corners
+
+    if (isTextLike) {
+      return null;
+    }
+
+    // Additional check: if not closed and has many corners, likely text (but allow some)
+    // But don't filter closed shapes with corners if they're circular (might be a circle)
+    if (!f.isClosed && f.corners > 8) {
+      return null;
+    }
+
+    // Special case: if it's closed and circular, allow it even with some corners
+    // (hand-drawn circles often have 2-3 corner detections due to imperfections)
+    if (f.isClosed && f.circularity > 0.7 && f.corners <= 4) {
+      // This looks like a circle, don't filter it out
+    } else if (f.isClosed && f.corners > 10) {
+      // Too many corners for a simple shape
+      return null;
+    }
+
+    // Check: if path is extremely wiggly (very high straightness for open shapes suggests text)
+    if (!f.isClosed && f.straightness > 3.0) {
+      return null;
+    }
+
+    // Minimum size requirement for closed shapes (but not too strict)
+    if (f.isClosed && (f.width < 25 || f.height < 25)) {
+      return null;
+    }
+
+    // If AI not ready, only use heuristic for very clear shapes
+    if (!this.isReady) {
+      const h = this.heuristicRecognize(points);
+      // Only return if heuristic is very confident (strict checks)
+      return h ? { type: h.type, confidence: 0.6, features: h } : null;
+    }
+
     const probs = this.predictProbs(f);
-    
-    // If probabilities are null, use heuristic fallback
+
+    // If probabilities are null, don't use heuristic fallback - likely not a shape
     if (!probs) {
-      const h = this.heuristicRecognize(points);
-      return h ? { type: h.type, confidence: 0.5, features: h } : null;
+      return null;
     }
-    
+
     const idx = probs.indexOf(Math.max(...probs));
     const type = this.shapeClasses[idx];
     const confidence = probs[idx];
+
+    // Only proceed if confidence is reasonably high (70% for closed shapes, 75% for open)
+    const minConfidence = f.isClosed ? 0.7 : 0.75;
+    if (confidence < minConfidence) {
+      return null;
+    }
+
+    // Additional safety: if it's an open shape (line), require clear line characteristics
+    if (
+      type === "line" &&
+      !f.isClosed &&
+      (f.straightness > 1.8 || f.corners > 2)
+    ) {
+      return null;
+    }
+
     // Prefer AI result, but if geometry is too tiny fallback to heuristic geometry
-    const features =
-      this.convertToShape(points, type) || this.heuristicRecognize(points);
+    const features = this.convertToShape(points, type);
+    if (!features) {
+      // Only use heuristic if convertToShape fails and we have high confidence
+      const h = this.heuristicRecognize(points);
+      return h
+        ? { type: h.type, confidence: confidence * 0.8, features: h }
+        : null;
+    }
+
     return {
       type,
       confidence,
@@ -364,7 +495,7 @@ class MinimalAIShapeRecognition {
     // SHAPE RECOGNITION: CONVERT TO PERFECT GEOMETRIC SHAPE
     // ============================================================================
     // This method converts a recognized shape type to a perfect geometric representation:
-    // 
+    //
     // SHAPE CONVERSIONS:
     // - Line: Two points (start and end of bounding box diagonal)
     // - Circle: Center point (x, y) and radius (half of smaller dimension)
@@ -401,7 +532,12 @@ class MinimalAIShapeRecognition {
     }
     if (type === "square") {
       const side = Math.min(f.width, f.height);
-      return { type: "square", x: f.minX + (f.width - side) / 2, y: f.minY + (f.height - side) / 2, side };
+      return {
+        type: "square",
+        x: f.minX + (f.width - side) / 2,
+        y: f.minY + (f.height - side) / 2,
+        side,
+      };
     }
     if (type === "triangle") {
       // Equilateral triangle: base at bottom, apex at top
@@ -410,9 +546,12 @@ class MinimalAIShapeRecognition {
       return {
         type: "triangle",
         points: [
-          f.minX, baseY,           // bottom-left
-          f.maxX, baseY,           // bottom-right
-          (f.minX + f.maxX) / 2, apexY  // top apex
+          f.minX,
+          baseY, // bottom-left
+          f.maxX,
+          baseY, // bottom-right
+          (f.minX + f.maxX) / 2,
+          apexY, // top apex
         ],
       };
     }
@@ -453,12 +592,12 @@ class MinimalAIShapeRecognition {
       height: f.height,
     };
   }
-  
+
   // ============================================================================
   // SHAPE RECOGNITION: HEURISTIC FALLBACK SYSTEM
   // ============================================================================
   // This method provides a geometric fallback when AI model confidence is low:
-  // 
+  //
   // IMPROVEMENTS MADE:
   // 1. Strict Corner Matching:
   //    - Uses exact corner count (rounded) for precise shape identification
@@ -489,32 +628,53 @@ class MinimalAIShapeRecognition {
     const centerY = f.minY + f.height / 2;
     const exactCorners = Math.round(f.corners);
 
-    // Line detection
-    if (!f.isClosed && f.aspect > 4 && f.straightness < 1.5 && exactCorners < 2) {
+    // Minimum size check for all shapes
+    if (f.width < 20 || f.height < 20) {
+      return null;
+    }
+
+    // Line detection - must be straight, reasonably long, and have minimal corners
+    if (
+      !f.isClosed &&
+      f.aspect > 4 &&
+      f.straightness < 1.4 &&
+      exactCorners <= 1 &&
+      f.width > 40
+    ) {
       return {
         type: "line",
         points: [f.startX, f.startY, f.endX, f.endY],
       };
     }
-    
+
     if (f.isClosed) {
-      // Triangle
-      if (exactCorners === 3 && f.circularity < 0.5 && f.isConvex) {
+      // Triangle - must have exactly 3 corners AND low squareness AND low right-angle score
+      // This prevents squares/rectangles with 3 detected corners from being recognized as triangles
+      if (
+        exactCorners === 3 &&
+        f.circularity < 0.5 &&
+        f.isConvex &&
+        f.squareness < 0.7 &&
+        f.rightAngleScore < 0.5
+      ) {
         const baseY = f.maxY;
         const apexY = f.minY;
         return {
           type: "triangle",
-          points: [
-            f.minX, baseY,
-            f.maxX, baseY,
-            (f.minX + f.maxX) / 2, apexY
-          ],
+          points: [f.minX, baseY, f.maxX, baseY, (f.minX + f.maxX) / 2, apexY],
         };
       }
-      
+
       // 4-corner shapes - prefer right angles
-      if (exactCorners === 4 && f.circularity < 0.4) {
-        if (f.rightAngleScore > 0.6 && f.aspect <= 1.2 && f.squareness > 0.9) {
+      // Also allow 3 corners if it has high squareness/right angles (might be square/rect with one corner missed)
+      if (
+        (exactCorners === 4 ||
+          (exactCorners === 3 &&
+            f.rightAngleScore > 0.5 &&
+            f.squareness > 0.7)) &&
+        f.circularity < 0.4
+      ) {
+        if (f.rightAngleScore > 0.5 && f.aspect <= 1.2 && f.squareness > 0.85) {
           const side = Math.min(f.width, f.height);
           return {
             type: "square",
@@ -523,7 +683,7 @@ class MinimalAIShapeRecognition {
             side,
           };
         }
-        if (f.rightAngleScore > 0.6 && (f.aspect > 1.3 || f.squareness < 0.8)) {
+        if (f.rightAngleScore > 0.5 && (f.aspect > 1.3 || f.squareness < 0.8)) {
           return {
             type: "rectangle",
             x: f.minX,
@@ -548,7 +708,7 @@ class MinimalAIShapeRecognition {
           points: points_pent,
         };
       }
-      
+
       // Hexagon
       if (exactCorners === 6 && f.circularity < 0.8 && f.isConvex) {
         const radius = Math.min(f.width, f.height) / 2;
@@ -564,8 +724,14 @@ class MinimalAIShapeRecognition {
         };
       }
 
-      // Circle
-      if (f.circularity > 0.85 && exactCorners < 2) {
+      // Circle - must be circular and have minimal corners (relaxed requirements)
+      // Allow circles with up to 3 corners (hand-drawn circles often have slight imperfections)
+      if (
+        f.circularity > 0.75 &&
+        exactCorners <= 3 &&
+        f.width > 25 &&
+        f.height > 25
+      ) {
         const radius = Math.min(f.width, f.height) / 2;
         return {
           type: "circle",
@@ -575,7 +741,7 @@ class MinimalAIShapeRecognition {
         };
       }
     }
-    
+
     return null;
   }
 }

@@ -19,9 +19,11 @@ import { SHAPES, EVENTS } from "../utils/constants";
 import { SocketContext } from "../context/SocketContext";
 /* Heuristic fallback is now inside the AI service */
 import aiShapeRecognition from "../services/aiShapeRecognition";
+import Chat from "./Chat";
+import jsPDF from "jspdf";
 
 const Whiteboard = forwardRef(
-  ({ roomId, users, elements, setElements }, ref) => {
+  ({ roomId, users, elements, setElements, currentUser }, ref) => {
     const socket = useContext(SocketContext);
     const stageRef = useRef(null);
     const stageContainerRef = useRef(null);
@@ -37,7 +39,7 @@ const Whiteboard = forwardRef(
     const [isDrawing, setIsDrawing] = useState(false);
     const [isErasing, setIsErasing] = useState(false);
     const [showSizeControls, setShowSizeControls] = useState(false);
-    const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+
     const [aiModelLoaded, setAiModelLoaded] = useState(false);
 
     const [currentTool, setCurrentTool] = useState("pencil"); // 'pencil', 'eraser', 'select', 'text'
@@ -51,6 +53,7 @@ const Whiteboard = forwardRef(
     const [textContextMenu, setTextContextMenu] = useState(null);
     const [textFont, setTextFont] = useState("Arial");
     const [textColor, setTextColor] = useState(selectedColor);
+    const currentDrawingElementIdRef = useRef(null);
     useImperativeHandle(ref, () => ({
       handleErase: () => {
         setElements([]);
@@ -58,6 +61,63 @@ const Whiteboard = forwardRef(
         setDebugInfo("Board cleared");
       },
     }));
+
+    // Export canvas as PDF
+    const handleExportPDF = () => {
+      if (!stageRef.current) return;
+
+      try {
+        const stage = stageRef.current.getStage();
+        const dataURL = stage.toDataURL({
+          pixelRatio: 2, // Higher quality
+          mimeType: "image/png",
+          quality: 1,
+        });
+
+        // Calculate PDF dimensions (A4 size in mm)
+        const pdfWidth = 210; // A4 width in mm
+        const pdfHeight = 297; // A4 height in mm
+
+        // Calculate aspect ratio and adjust dimensions
+        const canvasAspect = stageSize.width / stageSize.height;
+        let imgWidth = pdfWidth;
+        let imgHeight = pdfWidth / canvasAspect;
+
+        // If height exceeds A4, scale down
+        if (imgHeight > pdfHeight) {
+          imgHeight = pdfHeight;
+          imgWidth = pdfHeight * canvasAspect;
+        }
+
+        // Create PDF (A4 size)
+        const pdf = new jsPDF({
+          orientation: imgWidth > imgHeight ? "landscape" : "portrait",
+          unit: "mm",
+          format: "a4",
+        });
+
+        // Center the image on the page
+        const xOffset = (pdfWidth - imgWidth) / 2;
+        const yOffset = (pdfHeight - imgHeight) / 2;
+
+        // Add image to PDF
+        pdf.addImage(dataURL, "PNG", xOffset, yOffset, imgWidth, imgHeight);
+
+        // Generate filename with timestamp
+        const timestamp = new Date()
+          .toISOString()
+          .replace(/[:.]/g, "-")
+          .slice(0, -5);
+        const filename = `sketchsphere-${timestamp}.pdf`;
+
+        // Save PDF
+        pdf.save(filename);
+        setDebugInfo("PDF exported successfully");
+      } catch (error) {
+        console.error("Error exporting PDF:", error);
+        setDebugInfo("Failed to export PDF");
+      }
+    };
 
     // Initialize minimal AI recognizer
     useEffect(() => {
@@ -140,6 +200,7 @@ const Whiteboard = forwardRef(
                   color: textColor,
                   fontSize: fontSize,
                 },
+                userId: currentUser?.id,
               });
             }
           } else if (textCursor.text && textCursor.text.trim()) {
@@ -162,6 +223,7 @@ const Whiteboard = forwardRef(
             socket.emit(EVENTS.DRAW_START, {
               roomId,
               element: newTextElement,
+              userId: currentUser?.id,
             });
             setDebugInfo(`Text added: "${textCursor.text}"`);
           }
@@ -345,6 +407,15 @@ const Whiteboard = forwardRef(
           } else if (className === "Line") {
             // For line, freehand, eraser, triangle, hexagon, pentagon
             const originalPoints = node.points();
+            // Guard against undefined or invalid points
+            if (
+              !originalPoints ||
+              !Array.isArray(originalPoints) ||
+              originalPoints.length === 0
+            ) {
+              return;
+            }
+
             const shouldKeepRatio = [
               "circle",
               "square",
@@ -366,20 +437,30 @@ const Whiteboard = forwardRef(
                 sumY = 0,
                 count = 0;
               for (let i = 0; i < originalPoints.length; i += 2) {
-                sumX += originalPoints[i];
-                sumY += originalPoints[i + 1];
-                count++;
+                if (
+                  originalPoints[i] !== undefined &&
+                  originalPoints[i + 1] !== undefined
+                ) {
+                  sumX += originalPoints[i];
+                  sumY += originalPoints[i + 1];
+                  count++;
+                }
               }
               const centerX = count > 0 ? sumX / count : 0;
               const centerY = count > 0 ? sumY / count : 0;
               const newPoints = [];
               for (let i = 0; i < originalPoints.length; i += 2) {
-                const dx = originalPoints[i] - centerX;
-                const dy = originalPoints[i + 1] - centerY;
-                newPoints.push(
-                  centerX + dx * uniformScale,
-                  centerY + dy * uniformScale
-                );
+                if (
+                  originalPoints[i] !== undefined &&
+                  originalPoints[i + 1] !== undefined
+                ) {
+                  const dx = originalPoints[i] - centerX;
+                  const dy = originalPoints[i + 1] - centerY;
+                  newPoints.push(
+                    centerX + dx * uniformScale,
+                    centerY + dy * uniformScale
+                  );
+                }
               }
               updatedAttrs = {
                 ...updatedAttrs,
@@ -393,11 +474,16 @@ const Whiteboard = forwardRef(
               const transform = node.getTransform();
               const newPoints = [];
               for (let i = 0; i < originalPoints.length; i += 2) {
-                const pt = transform.point({
-                  x: originalPoints[i],
-                  y: originalPoints[i + 1],
-                });
-                newPoints.push(pt.x, pt.y);
+                if (
+                  originalPoints[i] !== undefined &&
+                  originalPoints[i + 1] !== undefined
+                ) {
+                  const pt = transform.point({
+                    x: originalPoints[i],
+                    y: originalPoints[i + 1],
+                  });
+                  newPoints.push(pt.x, pt.y);
+                }
               }
               updatedAttrs = {
                 ...updatedAttrs,
@@ -418,6 +504,7 @@ const Whiteboard = forwardRef(
             roomId,
             elementId: selectedId,
             updatedAttrs,
+            userId: currentUser?.id,
           });
           // Reset node transforms
           node.scaleX(1);
@@ -451,39 +538,180 @@ const Whiteboard = forwardRef(
 
     // Socket listeners
     useEffect(() => {
+      if (!socket || !roomId) return;
+
       const handleRemoteDrawStart = (element) => {
-        setElements((prev) => [...prev, element]);
+        // Only add if it's from another user (or if currentUser is not set yet, accept all)
+        const isFromOtherUser =
+          !currentUser || (element.userId && element.userId !== currentUser.id);
+        if (isFromOtherUser) {
+          console.log("Remote DRAW_START received:", element);
+          setElements((prev) => {
+            // Check if element already exists to avoid duplicates
+            if (prev.find((el) => el.id === element.id)) {
+              return prev;
+            }
+            return [...prev, element];
+          });
+        }
       };
 
-      const handleRemoteDrawMove = (point) => {
+      const handleRemoteDrawMove = (data) => {
+        // data should have { elementId, point, userId }
+        if (!data.elementId || !data.point) return;
+
+        // Skip if it's from current user
+        if (currentUser && data.userId === currentUser.id) return;
+
+        console.log("Remote DRAW_MOVE received:", data);
         setElements((prev) => {
-          if (prev.length === 0) return prev;
-          const lastIndex = prev.length - 1;
+          const elementIndex = prev.findIndex((el) => el.id === data.elementId);
+          if (elementIndex === -1) return prev;
+
           const updated = [...prev];
-          updated[lastIndex] = {
-            ...updated[lastIndex],
-            points: [...updated[lastIndex].points, point],
-          };
+          const element = updated[elementIndex];
+          if (
+            element &&
+            (element.type === SHAPES.FREEHAND || element.type === SHAPES.ERASER)
+          ) {
+            // data.point is already [x, y], and element.points is [[x, y], [x, y], ...]
+            // So we just need to append data.point to the points array
+            const currentPoints = Array.isArray(element.points)
+              ? element.points
+              : [];
+            updated[elementIndex] = {
+              ...element,
+              points: [...currentPoints, data.point],
+            };
+          }
           return updated;
         });
       };
 
+      const handleRemoteDrawEnd = (data) => {
+        // Handle draw end if needed
+        if (!currentUser || (data.userId && data.userId !== currentUser.id)) {
+          console.log("Remote DRAW_END received:", data);
+          setDebugInfo("Remote drawing completed");
+        }
+      };
+
+      const handleShapeUpdate = (data) => {
+        // Handle shape updates from other users (like AI shape recognition)
+        if (!currentUser || (data.userId && data.userId !== currentUser.id)) {
+          console.log("Remote SHAPE_UPDATE received:", data);
+          setElements((prev) => {
+            const elementIndex = prev.findIndex(
+              (el) => el.id === data.elementId
+            );
+            if (elementIndex === -1) {
+              // Element doesn't exist yet, might be a new shape recognition
+              // This shouldn't happen, but handle it gracefully
+              console.warn(
+                "Shape update received for non-existent element:",
+                data.elementId
+              );
+              return prev;
+            }
+
+            const existingElement = prev[elementIndex];
+            const updated = [...prev];
+
+            // If the type is changing (e.g., from freehand to circle), completely replace the element
+            // This is important for AI shape recognition which changes the entire element structure
+            if (
+              data.updatedAttrs.type &&
+              data.updatedAttrs.type !== existingElement.type
+            ) {
+              // Complete replacement for shape recognition
+              // Create a new element with all properties from updatedAttrs, preserving id and ensuring color/strokeWidth
+              const newElement = {
+                id: existingElement.id,
+                ...data.updatedAttrs,
+                // Ensure color and strokeWidth are set (use updatedAttrs if provided, otherwise keep existing)
+                color:
+                  data.updatedAttrs.color !== undefined
+                    ? data.updatedAttrs.color
+                    : existingElement.color,
+                strokeWidth:
+                  data.updatedAttrs.strokeWidth !== undefined
+                    ? data.updatedAttrs.strokeWidth
+                    : existingElement.strokeWidth,
+              };
+
+              // Remove properties that shouldn't exist for the new shape type
+              if (newElement.type === "circle") {
+                // Circle uses x, y, radius - remove points, width, height, side
+                delete newElement.points;
+                delete newElement.width;
+                delete newElement.height;
+                delete newElement.side;
+              } else if (newElement.type === "rectangle") {
+                // Rectangle uses x, y, width, height - remove points, radius, side
+                delete newElement.points;
+                delete newElement.radius;
+                delete newElement.side;
+              } else if (newElement.type === "square") {
+                // Square uses x, y, side - remove points, radius, width, height
+                delete newElement.points;
+                delete newElement.radius;
+                delete newElement.width;
+                delete newElement.height;
+              } else if (
+                newElement.type === "triangle" ||
+                newElement.type === "hexagon" ||
+                newElement.type === "pentagon" ||
+                newElement.type === "line"
+              ) {
+                // These use points - remove other shape properties
+                delete newElement.radius;
+                delete newElement.width;
+                delete newElement.height;
+                delete newElement.side;
+              }
+
+              console.log(
+                "Shape type changed from",
+                existingElement.type,
+                "to",
+                newElement.type,
+                ":",
+                newElement
+              );
+              updated[elementIndex] = newElement;
+            } else {
+              // Partial update (like transform, color change, etc.)
+              updated[elementIndex] = {
+                ...existingElement,
+                ...data.updatedAttrs,
+              };
+            }
+
+            return updated;
+          });
+        }
+      };
+
       const handleClearBoard = () => {
+        console.log("Remote CLEAR_BOARD received");
         setElements([]);
         setDebugInfo("Board cleared by another user");
       };
 
       socket.on(EVENTS.DRAW_START, handleRemoteDrawStart);
       socket.on(EVENTS.DRAW_MOVE, handleRemoteDrawMove);
+      socket.on(EVENTS.DRAW_END, handleRemoteDrawEnd);
+      socket.on(EVENTS.SHAPE_UPDATE, handleShapeUpdate);
       socket.on(EVENTS.CLEAR_BOARD, handleClearBoard);
-      /* socket.on(EVENTS.SHAPE_RECOGNIZED, handleShapeRecognized); */
 
       return () => {
         socket.off(EVENTS.DRAW_START, handleRemoteDrawStart);
         socket.off(EVENTS.DRAW_MOVE, handleRemoteDrawMove);
+        socket.off(EVENTS.DRAW_END, handleRemoteDrawEnd);
+        socket.off(EVENTS.SHAPE_UPDATE, handleShapeUpdate);
         socket.off(EVENTS.CLEAR_BOARD, handleClearBoard);
       };
-    }, [setElements, socket]);
+    }, [setElements, socket, roomId, currentUser]);
 
     const handleShapeDrop = (shapeType, x, y) => {
       const baseSize = 120;
@@ -580,7 +808,11 @@ const Whiteboard = forwardRef(
       }
 
       setElements((prev) => [...prev, newElement]);
-      socket.emit(EVENTS.DRAW_START, { roomId, element: newElement });
+      socket.emit(EVENTS.DRAW_START, {
+        roomId,
+        element: newElement,
+        userId: currentUser?.id,
+      });
       setDraggedShape(null);
       setDebugInfo(`Added ${shapeType}`);
     };
@@ -708,10 +940,8 @@ const Whiteboard = forwardRef(
                     y: targetShape.y + height / 2,
                   };
                 }
-              } else if (targetShape.points) {
-                const points = Array.isArray(targetShape.points[0])
-                  ? targetShape.points.flat()
-                  : targetShape.points;
+              } else if (Array.isArray(targetShape.points)) {
+                const points = normalizePoints(targetShape.points);
                 let sumX = 0,
                   sumY = 0,
                   count = 0;
@@ -781,7 +1011,12 @@ const Whiteboard = forwardRef(
     setCurrentStroke(newElement); */
 
       setElements((prev) => [...prev, newElement]);
-      socket.emit(EVENTS.DRAW_START, { roomId, element: newElement });
+      currentDrawingElementIdRef.current = newElement.id;
+      socket.emit(EVENTS.DRAW_START, {
+        roomId,
+        element: newElement,
+        userId: currentUser?.id,
+      });
       setDebugInfo(isErasing ? "Erasing..." : `Drawing with ${selectedColor}`);
     };
 
@@ -794,95 +1029,100 @@ const Whiteboard = forwardRef(
 
       setElements((prev) => {
         if (prev.length === 0) return prev;
+
         const lastIndex = prev.length - 1;
         const lastElement = prev[lastIndex];
 
-        // Emit logic moved inside to ensure we have the latest element ID
         if (
           lastElement.type === SHAPES.FREEHAND ||
           lastElement.type === SHAPES.ERASER
         ) {
-          // Emit specific ID so others know WHICH line to update
-          socket.emit(EVENTS.DRAW_MOVE, {
-            roomId,
-            elementId: lastElement.id,
-            point: [pos.x, pos.y],
-          });
-
+          // Ensure points is an array before spreading
+          const currentPoints = Array.isArray(lastElement.points)
+            ? lastElement.points
+            : [];
           const updatedElement = {
             ...lastElement,
-            points: [...lastElement.points, pos.x, pos.y], // Konva uses flat array
+            points: [...currentPoints, [pos.x, pos.y]],
+            color: isErasing ? "#ffffff" : selectedColor,
           };
+
+          /* // Update current stroke for shape recognition (disabled)
+        setCurrentStroke(updatedElement); */
+
           return [...prev.slice(0, lastIndex), updatedElement];
         }
         return prev;
       });
+
+      // Use the ref to track current drawing element
+      socket.emit(EVENTS.DRAW_MOVE, {
+        roomId,
+        elementId: currentDrawingElementIdRef.current,
+        point: [pos.x, pos.y],
+        userId: currentUser?.id,
+      });
     };
-    useEffect(() => {
-      // Load initial state from server
-      socket.on("board-state", (serverElements) => {
-        setElements(serverElements);
-      });
-
-      socket.on(EVENTS.DRAW_START, (element) => {
-        setElements((prev) => [...prev, element]);
-      });
-
-      // Update specific element by ID
-      socket.on(EVENTS.DRAW_MOVE, ({ elementId, point }) => {
-        setElements((prev) =>
-          prev.map((el) => {
-            if (el.id === elementId) {
-              return { ...el, points: [...el.points, point[0], point[1]] };
-            }
-            return el;
-          })
-        );
-      });
-
-      // Handle resizing/moving by other users
-      socket.on(EVENTS.SHAPE_UPDATE, ({ elementId, updatedAttrs }) => {
-        setElements((prev) =>
-          prev.map((el) =>
-            el.id === elementId ? { ...el, ...updatedAttrs } : el
-          )
-        );
-      });
-
-      socket.on(EVENTS.CLEAR_BOARD, () => {
-        setElements([]);
-        setDebugInfo("Board cleared by another user");
-      });
-
-      return () => {
-        socket.off("board-state");
-        socket.off(EVENTS.DRAW_START);
-        socket.off(EVENTS.DRAW_MOVE);
-        socket.off(EVENTS.SHAPE_UPDATE);
-        socket.off(EVENTS.CLEAR_BOARD);
-      };
-    }, [socket, setElements]);
 
     const handleMouseUp = async () => {
       if (currentTool !== "pencil" && currentTool !== "eraser") return;
       if (!isDrawing) return;
       setIsDrawing(false);
-
+      let recognizedShape = null;
       setElements((prev) => {
         if (prev.length === 0) return prev;
         const lastIndex = prev.length - 1;
         const lastElement = prev[lastIndex];
         if (
           lastElement.type !== SHAPES.FREEHAND ||
-          (lastElement.points?.length || 0) < 6
+          !lastElement.points ||
+          !Array.isArray(lastElement.points) ||
+          lastElement.points.length < 20 // Increased minimum points to avoid recognizing short strokes/text
         ) {
           return prev;
         }
+        // Ensure points array is valid before passing to AI
+        const validPoints = lastElement.points.filter(
+          (p) =>
+            Array.isArray(p) &&
+            p.length >= 2 &&
+            typeof p[0] === "number" &&
+            typeof p[1] === "number"
+        );
+        // Require at least 20 valid points for shape recognition
+        // This filters out short text strokes and small doodles
+        if (validPoints.length < 20) {
+          return prev;
+        }
+        // Debug: log point positions to check if coordinates are correct
+        const minX = Math.min(...validPoints.map((p) => p[0]));
+        const maxX = Math.max(...validPoints.map((p) => p[0]));
+        const minY = Math.min(...validPoints.map((p) => p[1]));
+        const maxY = Math.max(...validPoints.map((p) => p[1]));
+        console.log("Shape recognition attempt:", {
+          pointCount: validPoints.length,
+          bounds: { minX, maxX, minY, maxY },
+          width: maxX - minX,
+          height: maxY - minY,
+          stageSize,
+        });
+
         const aiResult = aiModelLoaded
-          ? aiShapeRecognition.recognizeShape(lastElement.points)
+          ? aiShapeRecognition.recognizeShape(validPoints)
           : null;
         const recognized = aiResult?.features;
-        if (!recognized) return prev;
+        if (!recognized) {
+          console.log(
+            "Shape not recognized - likely text or not geometric enough"
+          );
+          return prev;
+        }
+        console.log(
+          "Shape recognized:",
+          recognized.type,
+          "at position:",
+          recognized
+        );
         const newShape = {
           id: lastElement.id,
           ...recognized,
@@ -894,11 +1134,27 @@ const Whiteboard = forwardRef(
             aiResult ? ` (${(aiResult.confidence * 100).toFixed(0)}%)` : ""
           }`
         );
+        recognizedShape = newShape;
         return [...prev.slice(0, lastIndex), newShape];
       });
 
+      if (recognizedShape) {
+        const { id, ...updatedAttrs } = recognizedShape;
+        socket.emit(EVENTS.SHAPE_UPDATE, {
+          roomId,
+          elementId: id,
+          updatedAttrs,
+          userId: currentUser?.id,
+        });
+      }
+
       /* setCurrentStroke(null); */
-      socket.emit(EVENTS.DRAW_END, { roomId });
+      socket.emit(EVENTS.DRAW_END, {
+        roomId,
+        elementId: currentDrawingElementIdRef.current,
+        userId: currentUser?.id,
+      });
+      currentDrawingElementIdRef.current = null;
       setDebugInfo("Drawing ended");
     };
 
@@ -958,406 +1214,402 @@ const Whiteboard = forwardRef(
       "#cbd5e1", // slate-300
     ];
 
+    function normalizePoints(points) {
+      // Handle null, undefined, or non-array values
+      if (!points || !Array.isArray(points)) return [];
+      // Handle empty arrays
+      if (points.length === 0) return [];
+      // Check if first element exists and is an array before accessing it
+      const firstElement = points[0];
+      if (
+        firstElement !== undefined &&
+        firstElement !== null &&
+        Array.isArray(firstElement)
+      ) {
+        return points.flat();
+      }
+      return points;
+    }
+
     return (
       <div className="whiteboard">
         {/* Drawing Tools Panel */}
-        {!isSidebarOpen && (
-          <button
-            className="sidebar-toggle-btn"
-            onClick={() => setIsSidebarOpen(true)}
-            title="Open Toolbar"
-          >
-            🛠️
-          </button>
-        )}
-        {isSidebarOpen && (
-          <div className="drawing-tools" style={{ display: "block" }}>
-            <div className="tools-header">
-              <span>Drawing Tools</span>
+        <div className="drawing-tools" style={{ display: "block" }}>
+          <div className="tools-header">Drawing Tools</div>
+
+          <div className="tool-group">
+            <div className="tool-group-title">Tools</div>
+            <div className="tool-buttons">
               <button
-                className="close-sidebar-btn"
-                onClick={() => setIsSidebarOpen(false)}
-                title="Close Toolbar"
+                className={`tool-btn ${
+                  currentTool === "pencil" ? "active" : ""
+                }`}
+                onClick={handleDraw}
+                title="Pencil Tool"
               >
-                ✕
+                🖊️
+              </button>
+              <button
+                className={`tool-btn eraser ${
+                  currentTool === "eraser" ? "active" : ""
+                }`}
+                onClick={handleErase}
+                title="Eraser Tool"
+              >
+                🩹
+              </button>
+              <button
+                className="tool-btn"
+                onClick={() => {
+                  setShowSizeControls(!showSizeControls);
+                  setDebugInfo(
+                    `Size controls ${showSizeControls ? "hidden" : "shown"}`
+                  );
+                }}
+                title="Adjust Pen and Eraser Size"
+              >
+                📏
+              </button>
+              <button
+                className={`tool-btn ${
+                  currentTool === "select" ? "active" : ""
+                }`}
+                onClick={() => setCurrentTool("select")}
+                title="Select Tool"
+              >
+                🔍
+              </button>
+              <button
+                className={`tool-btn ${currentTool === "text" ? "active" : ""}`}
+                onClick={() => {
+                  console.log("Text tool button clicked");
+                  setCurrentTool("text");
+                  setDebugInfo(
+                    "Text tool selected - Click on canvas to add text"
+                  );
+                }}
+                title="Text Tool"
+              >
+                📝
               </button>
             </div>
+          </div>
 
-            <div className="tool-group">
-              <div className="tool-group-title">Tools</div>
-              <div className="tool-buttons">
-                <button
-                  className={`tool-btn ${
-                    currentTool === "pencil" ? "active" : ""
-                  }`}
-                  onClick={handleDraw}
-                  title="Pencil Tool"
-                >
-                  🖊️
-                </button>
-                <button
-                  className={`tool-btn eraser ${
-                    currentTool === "eraser" ? "active" : ""
-                  }`}
-                  onClick={handleErase}
-                  title="Eraser Tool"
-                >
-                  🩹
-                </button>
-                <button
-                  className="tool-btn"
-                  onClick={() => {
-                    setShowSizeControls(!showSizeControls);
-                    setDebugInfo(
-                      `Size controls ${showSizeControls ? "hidden" : "shown"}`
-                    );
-                  }}
-                  title="Adjust Pen and Eraser Size"
-                >
-                  📏
-                </button>
-                <button
-                  className={`tool-btn ${
-                    currentTool === "select" ? "active" : ""
-                  }`}
-                  onClick={() => setCurrentTool("select")}
-                  title="Select Tool"
-                >
-                  🔍
-                </button>
-                <button
-                  className={`tool-btn ${
-                    currentTool === "text" ? "active" : ""
-                  }`}
-                  onClick={() => {
-                    console.log("Text tool button clicked");
-                    setCurrentTool("text");
-                    setDebugInfo(
-                      "Text tool selected - Click on canvas to add text"
-                    );
-                  }}
-                  title="Text Tool"
-                >
-                  📝
-                </button>
-              </div>
+          <div className="tool-group size-controls-group">
+            <div
+              className="tool-group-title"
+              style={{ display: showSizeControls ? "block" : "none" }}
+            >
+              Brush Size
             </div>
-
-            <div className="tool-group size-controls-group">
-              <div
-                className="tool-group-title"
-                style={{ display: showSizeControls ? "block" : "none" }}
-              >
-                Brush Size
-              </div>
-              {showSizeControls && (
-                <div className="size-controls">
+            {showSizeControls && (
+              <div className="size-controls">
+                <div className="size-control">
+                  <label>Pen: {pencilSize}px</label>
+                  <input
+                    type="range"
+                    min="1"
+                    max="20"
+                    value={pencilSize}
+                    onChange={(e) => setPencilSize(parseInt(e.target.value))}
+                    className="size-slider"
+                  />
+                </div>
+                <div className="size-control">
+                  <label>Eraser: {eraserSize}px</label>
+                  <input
+                    type="range"
+                    min="5"
+                    max="50"
+                    value={eraserSize}
+                    onChange={(e) => setEraserSize(parseInt(e.target.value))}
+                    className="size-slider"
+                  />
+                </div>
+                {currentTool === "text" && (
                   <div className="size-control">
-                    <label>Pen: {pencilSize}px</label>
+                    <label>Font Size: {fontSize}px</label>
                     <input
                       type="range"
-                      min="1"
-                      max="20"
-                      value={pencilSize}
-                      onChange={(e) => setPencilSize(parseInt(e.target.value))}
+                      min="12"
+                      max="72"
+                      value={fontSize}
+                      onChange={(e) => setFontSize(parseInt(e.target.value))}
                       className="size-slider"
                     />
                   </div>
-                  <div className="size-control">
-                    <label>Eraser: {eraserSize}px</label>
-                    <input
-                      type="range"
-                      min="5"
-                      max="50"
-                      value={eraserSize}
-                      onChange={(e) => setEraserSize(parseInt(e.target.value))}
-                      className="size-slider"
-                    />
-                  </div>
-                  {currentTool === "text" && (
-                    <div className="size-control">
-                      <label>Font Size: {fontSize}px</label>
-                      <input
-                        type="range"
-                        min="12"
-                        max="72"
-                        value={fontSize}
-                        onChange={(e) => setFontSize(parseInt(e.target.value))}
-                        className="size-slider"
-                      />
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-
-            <div className="tool-group">
-              <div className="tool-group-title">Shapes</div>
-              <div className="shape-palette">
-                <div
-                  className="shape-item"
-                  draggable
-                  onDragStart={(e) => handlePaletteDragStart(e, "circle")}
-                  onDragEnd={handlePaletteDragEnd}
-                  title="Circle"
-                >
-                  <svg viewBox="0 0 24 24" className="shape-icon">
-                    <circle
-                      cx="12"
-                      cy="12"
-                      r="9"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                    />
-                  </svg>
-                </div>
-                <div
-                  className="shape-item"
-                  draggable
-                  onDragStart={(e) => handlePaletteDragStart(e, "square")}
-                  onDragEnd={handlePaletteDragEnd}
-                  title="Square"
-                >
-                  <svg viewBox="0 0 24 24" className="shape-icon">
-                    <rect
-                      x="5"
-                      y="5"
-                      width="14"
-                      height="14"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                    />
-                  </svg>
-                </div>
-                <div
-                  className="shape-item"
-                  draggable
-                  onDragStart={(e) => handlePaletteDragStart(e, "rectangle")}
-                  onDragEnd={handlePaletteDragEnd}
-                  title="Rectangle"
-                >
-                  <svg viewBox="0 0 24 24" className="shape-icon">
-                    <rect
-                      x="3"
-                      y="7"
-                      width="18"
-                      height="10"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                    />
-                  </svg>
-                </div>
-                <div
-                  className="shape-item"
-                  draggable
-                  onDragStart={(e) => handlePaletteDragStart(e, "triangle")}
-                  onDragEnd={handlePaletteDragEnd}
-                  title="Triangle"
-                >
-                  <svg viewBox="0 0 24 24" className="shape-icon">
-                    <polygon
-                      points="12,4 20,18 4,18"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                    />
-                  </svg>
-                </div>
-                <div
-                  className="shape-item"
-                  draggable
-                  onDragStart={(e) => handlePaletteDragStart(e, "hexagon")}
-                  onDragEnd={handlePaletteDragEnd}
-                  title="Hexagon"
-                >
-                  <svg viewBox="0 0 24 24" className="shape-icon">
-                    <polygon
-                      points="8,4 16,4 20,12 16,20 8,20 4,12"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                    />
-                  </svg>
-                </div>
-                <div
-                  className="shape-item"
-                  draggable
-                  onDragStart={(e) => handlePaletteDragStart(e, "pentagon")}
-                  onDragEnd={handlePaletteDragEnd}
-                  title="Pentagon"
-                >
-                  <svg viewBox="0 0 24 24" className="shape-icon">
-                    <polygon
-                      points="12,3 20,9 17,20 7,20 4,9"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                    />
-                  </svg>
-                </div>
-              </div>
-            </div>
-
-            <div className="tool-group">
-              <div className="tool-group-title">Pen Color</div>
-              <button
-                className="canvas-color-btn"
-                onClick={() => setShowPenColorPicker(!showPenColorPicker)}
-                title="Choose pen color"
-              >
-                <div
-                  className="color-preview"
-                  style={{ backgroundColor: selectedColor }}
-                ></div>
-                <span>Pen Color</span>
-                <span className="color-icon">⚡</span>
-              </button>
-            </div>
-
-            <div className="tool-group">
-              <div className="tool-group-title">Canvas Background</div>
-              <button
-                className="canvas-color-btn"
-                onClick={() => setShowCanvasColorPicker(!showCanvasColorPicker)}
-                title="Choose canvas background color"
-              >
-                <div
-                  className="color-preview"
-                  style={{ backgroundColor: canvasColor }}
-                ></div>
-                <span>Canvas Color</span>
-                <span className="color-icon">⚡</span>
-              </button>
-            </div>
-
-            {showPenColorPicker && (
-              <div
-                className="color-panel-overlay"
-                onClick={() => {
-                  setShowPenColorPicker(false);
-                  setIsDrawing(false);
-                  setDebugInfo("Color picker closed - Drawing paused");
-                }}
-              >
-                <div
-                  className="color-panel"
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  <div className="color-panel-header">
-                    <h3>Choose Pen Color</h3>
-                    <button
-                      className="close-btn"
-                      onClick={() => {
-                        setShowPenColorPicker(false);
-                        setIsDrawing(false);
-                        setDebugInfo("Color picker closed - Drawing paused");
-                      }}
-                    >
-                      ✕
-                    </button>
-                  </div>
-
-                  <div className="color-panel-content">
-                    <div className="custom-color-section">
-                      <label>Custom Color</label>
-                      <input
-                        type="color"
-                        className="color-picker"
-                        value={selectedColor}
-                        onChange={(e) => handleColorSelect(e.target.value)}
-                        title="Choose custom pen color"
-                      />
-                    </div>
-
-                    <div className="preset-colors-section">
-                      <label>Preset Colors</label>
-                      <div className="preset-colors">
-                        {presetColors.map((color) => (
-                          <button
-                            key={color}
-                            className={`preset-color-btn ${
-                              selectedColor === color ? "selected" : ""
-                            }`}
-                            style={{ backgroundColor: color }}
-                            onClick={() => handleColorSelect(color)}
-                            title={`Select ${color}`}
-                          />
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {showCanvasColorPicker && (
-              <div
-                className="color-panel-overlay"
-                onClick={() => {
-                  setShowCanvasColorPicker(false);
-                  setIsDrawing(false);
-                }}
-              >
-                <div
-                  className="color-panel"
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  <div className="color-panel-header">
-                    <h3>Choose Canvas Color</h3>
-                    <button
-                      className="close-btn"
-                      onClick={() => setShowCanvasColorPicker(false)}
-                    >
-                      ✕
-                    </button>
-                  </div>
-
-                  <div className="color-panel-content">
-                    <div className="custom-color-section">
-                      <label>Custom Color</label>
-                      <input
-                        type="color"
-                        className="color-picker"
-                        value={canvasColor}
-                        onChange={(e) => {
-                          setCanvasColor(e.target.value);
-                          setIsDrawing(false);
-                        }}
-                        title="Choose custom canvas color"
-                      />
-                    </div>
-
-                    <div className="preset-colors-section">
-                      <label>Preset Colors</label>
-                      <div className="preset-colors">
-                        {canvasPresetColors.map((color) => (
-                          <button
-                            key={color}
-                            className={`preset-color-btn ${
-                              canvasColor === color ? "selected" : ""
-                            }`}
-                            style={{ backgroundColor: color }}
-                            onClick={() => {
-                              setCanvasColor(color);
-                              setIsDrawing(false);
-                            }}
-                            title={`Select ${color}`}
-                          />
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-                </div>
+                )}
               </div>
             )}
           </div>
-        )}
+
+          <div className="tool-group">
+            <div className="tool-group-title">Shapes</div>
+            <div className="shape-palette">
+              <div
+                className="shape-item"
+                draggable
+                onDragStart={(e) => handlePaletteDragStart(e, "circle")}
+                onDragEnd={handlePaletteDragEnd}
+                title="Circle"
+              >
+                <svg viewBox="0 0 24 24" className="shape-icon">
+                  <circle
+                    cx="12"
+                    cy="12"
+                    r="9"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                  />
+                </svg>
+              </div>
+              <div
+                className="shape-item"
+                draggable
+                onDragStart={(e) => handlePaletteDragStart(e, "square")}
+                onDragEnd={handlePaletteDragEnd}
+                title="Square"
+              >
+                <svg viewBox="0 0 24 24" className="shape-icon">
+                  <rect
+                    x="5"
+                    y="5"
+                    width="14"
+                    height="14"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                  />
+                </svg>
+              </div>
+              <div
+                className="shape-item"
+                draggable
+                onDragStart={(e) => handlePaletteDragStart(e, "rectangle")}
+                onDragEnd={handlePaletteDragEnd}
+                title="Rectangle"
+              >
+                <svg viewBox="0 0 24 24" className="shape-icon">
+                  <rect
+                    x="3"
+                    y="7"
+                    width="18"
+                    height="10"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                  />
+                </svg>
+              </div>
+              <div
+                className="shape-item"
+                draggable
+                onDragStart={(e) => handlePaletteDragStart(e, "triangle")}
+                onDragEnd={handlePaletteDragEnd}
+                title="Triangle"
+              >
+                <svg viewBox="0 0 24 24" className="shape-icon">
+                  <polygon
+                    points="12,4 20,18 4,18"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                  />
+                </svg>
+              </div>
+              <div
+                className="shape-item"
+                draggable
+                onDragStart={(e) => handlePaletteDragStart(e, "hexagon")}
+                onDragEnd={handlePaletteDragEnd}
+                title="Hexagon"
+              >
+                <svg viewBox="0 0 24 24" className="shape-icon">
+                  <polygon
+                    points="8,4 16,4 20,12 16,20 8,20 4,12"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                  />
+                </svg>
+              </div>
+              <div
+                className="shape-item"
+                draggable
+                onDragStart={(e) => handlePaletteDragStart(e, "pentagon")}
+                onDragEnd={handlePaletteDragEnd}
+                title="Pentagon"
+              >
+                <svg viewBox="0 0 24 24" className="shape-icon">
+                  <polygon
+                    points="12,3 20,9 17,20 7,20 4,9"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                  />
+                </svg>
+              </div>
+            </div>
+          </div>
+
+          <div className="tool-group">
+            <div className="tool-group-title">Pen Color</div>
+            <button
+              className="canvas-color-btn"
+              onClick={() => setShowPenColorPicker(!showPenColorPicker)}
+              title="Choose pen color"
+            >
+              <div
+                className="color-preview"
+                style={{ backgroundColor: selectedColor }}
+              ></div>
+              <span>Pen Color</span>
+              <span className="color-icon">⚡</span>
+            </button>
+          </div>
+
+          <div className="tool-group">
+            <div className="tool-group-title">Canvas Background</div>
+            <button
+              className="canvas-color-btn"
+              onClick={() => setShowCanvasColorPicker(!showCanvasColorPicker)}
+              title="Choose canvas background color"
+            >
+              <div
+                className="color-preview"
+                style={{ backgroundColor: canvasColor }}
+              ></div>
+              <span>Canvas Color</span>
+              <span className="color-icon">⚡</span>
+            </button>
+          </div>
+
+          {showPenColorPicker && (
+            <div
+              className="color-panel-overlay"
+              onClick={() => {
+                setShowPenColorPicker(false);
+                setIsDrawing(false);
+                setDebugInfo("Color picker closed - Drawing paused");
+              }}
+            >
+              <div className="color-panel" onClick={(e) => e.stopPropagation()}>
+                <div className="color-panel-header">
+                  <h3>Choose Pen Color</h3>
+                  <button
+                    className="close-btn"
+                    onClick={() => {
+                      setShowPenColorPicker(false);
+                      setIsDrawing(false);
+                      setDebugInfo("Color picker closed - Drawing paused");
+                    }}
+                  >
+                    ✕
+                  </button>
+                </div>
+
+                <div className="color-panel-content">
+                  <div className="custom-color-section">
+                    <label>Custom Color</label>
+                    <input
+                      type="color"
+                      className="color-picker"
+                      value={selectedColor}
+                      onChange={(e) => handleColorSelect(e.target.value)}
+                      title="Choose custom pen color"
+                    />
+                  </div>
+
+                  <div className="preset-colors-section">
+                    <label>Preset Colors</label>
+                    <div className="preset-colors">
+                      {presetColors.map((color) => (
+                        <button
+                          key={color}
+                          className={`preset-color-btn ${
+                            selectedColor === color ? "selected" : ""
+                          }`}
+                          style={{ backgroundColor: color }}
+                          onClick={() => handleColorSelect(color)}
+                          title={`Select ${color}`}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {showCanvasColorPicker && (
+            <div
+              className="color-panel-overlay"
+              onClick={() => {
+                setShowCanvasColorPicker(false);
+                setIsDrawing(false);
+              }}
+            >
+              <div className="color-panel" onClick={(e) => e.stopPropagation()}>
+                <div className="color-panel-header">
+                  <h3>Choose Canvas Color</h3>
+                  <button
+                    className="close-btn"
+                    onClick={() => setShowCanvasColorPicker(false)}
+                  >
+                    ✕
+                  </button>
+                </div>
+
+                <div className="color-panel-content">
+                  <div className="custom-color-section">
+                    <label>Custom Color</label>
+                    <input
+                      type="color"
+                      className="color-picker"
+                      value={canvasColor}
+                      onChange={(e) => {
+                        setCanvasColor(e.target.value);
+                        setIsDrawing(false);
+                      }}
+                      title="Choose custom canvas color"
+                    />
+                  </div>
+
+                  <div className="preset-colors-section">
+                    <label>Preset Colors</label>
+                    <div className="preset-colors">
+                      {canvasPresetColors.map((color) => (
+                        <button
+                          key={color}
+                          className={`preset-color-btn ${
+                            canvasColor === color ? "selected" : ""
+                          }`}
+                          style={{ backgroundColor: color }}
+                          onClick={() => {
+                            setCanvasColor(color);
+                            setIsDrawing(false);
+                          }}
+                          title={`Select ${color}`}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
 
         {/* Floating Canvas Controls */}
         <div className="canvas-controls">
+          <button
+            className="canvas-btn"
+            onClick={handleExportPDF}
+            title="Save as PDF"
+          >
+            📄
+          </button>
           <button
             className="canvas-btn"
             onClick={() => setShowGrid(!showGrid)}
@@ -1418,11 +1670,7 @@ const Whiteboard = forwardRef(
                       key={element.id}
                       name={element.id.toString()}
                       draggable={currentTool === "select"}
-                      points={
-                        Array.isArray(element.points[0])
-                          ? element.points.flat()
-                          : element.points
-                      }
+                      points={normalizePoints(element.points)}
                       stroke={element.color || selectedColor}
                       strokeWidth={
                         element.strokeWidth ||
@@ -1446,11 +1694,7 @@ const Whiteboard = forwardRef(
                       key={element.id}
                       name={element.id.toString()}
                       draggable={currentTool === "select"}
-                      points={
-                        Array.isArray(element.points[0])
-                          ? element.points.flat()
-                          : element.points
-                      }
+                      points={normalizePoints(element.points)}
                       stroke={element.color || selectedColor}
                       strokeWidth={element.strokeWidth || pencilSize}
                       tension={0.5}
@@ -1476,6 +1720,22 @@ const Whiteboard = forwardRef(
                   );
                 }
                 if (element.type === "rectangle") {
+                  // Validate rectangle properties before rendering
+                  if (
+                    !element.x ||
+                    !element.y ||
+                    !element.width ||
+                    !element.height ||
+                    isNaN(element.x) ||
+                    isNaN(element.y) ||
+                    isNaN(element.width) ||
+                    isNaN(element.height) ||
+                    element.width <= 0 ||
+                    element.height <= 0
+                  ) {
+                    console.warn("Invalid rectangle element:", element);
+                    return null;
+                  }
                   return (
                     <Rect
                       name={element.id.toString()}
@@ -1513,11 +1773,7 @@ const Whiteboard = forwardRef(
                       key={element.id}
                       name={element.id.toString()}
                       draggable={currentTool === "select"}
-                      points={
-                        Array.isArray(element.points[0])
-                          ? element.points.flat()
-                          : element.points
-                      }
+                      points={normalizePoints(element.points)}
                       closed
                       stroke={element.color}
                       strokeWidth={element.strokeWidth}
@@ -1531,11 +1787,7 @@ const Whiteboard = forwardRef(
                       key={element.id}
                       name={element.id.toString()}
                       draggable={currentTool === "select"}
-                      points={
-                        Array.isArray(element.points[0])
-                          ? element.points.flat()
-                          : element.points
-                      }
+                      points={normalizePoints(element.points)}
                       closed
                       stroke={element.color || selectedColor}
                       strokeWidth={element.strokeWidth || pencilSize}
@@ -1549,11 +1801,7 @@ const Whiteboard = forwardRef(
                       key={element.id}
                       name={element.id.toString()}
                       draggable={currentTool === "select"}
-                      points={
-                        Array.isArray(element.points[0])
-                          ? element.points.flat()
-                          : element.points
-                      }
+                      points={normalizePoints(element.points)}
                       closed
                       stroke={element.color || selectedColor}
                       strokeWidth={element.strokeWidth || pencilSize}
@@ -1756,7 +2004,7 @@ const Whiteboard = forwardRef(
           </div>
         )}
 
-        <style jsx>{`
+        <style>{`
           :root {
             --primary: #4f46e5;
             --primary-600: #4f46e5;
@@ -1808,11 +2056,7 @@ const Whiteboard = forwardRef(
             width: 10px;
           }
           .drawing-tools::-webkit-scrollbar-thumb {
-            background: linear-gradient(
-              180deg,
-              var(--primary-500),
-              var(--primary-600)
-            );
+            background: linear-gradient(180deg, var(--primary-500), var(--primary-600));
             border-radius: 8px;
             border: 2px solid #ffffff;
           }
@@ -1822,25 +2066,17 @@ const Whiteboard = forwardRef(
           }
 
           @keyframes panel-in {
-            from {
-              opacity: 0;
-              transform: translateY(-6px);
-            }
-            to {
-              opacity: 1;
-              transform: translateY(0);
-            }
+            from { opacity: 0; transform: translateY(-6px); }
+            to { opacity: 1; transform: translateY(0); }
           }
 
           .tools-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
             font-weight: 700;
             letter-spacing: 0.2px;
             margin-bottom: 14px;
             padding-bottom: 8px;
             border-bottom: 1px dashed var(--panel-border);
+            text-align: center;
           }
 
           .tool-group {
@@ -1883,8 +2119,7 @@ const Whiteboard = forwardRef(
             border: 1px solid var(--panel-border);
             background: #ffffff;
             border-radius: 10px;
-            transition: transform 140ms ease, box-shadow 140ms ease,
-              border-color 140ms ease, background 140ms ease;
+            transition: transform 140ms ease, box-shadow 140ms ease, border-color 140ms ease, background 140ms ease;
             box-shadow: 0 2px 8px rgba(2, 6, 23, 0.04);
           }
           .tool-btn:hover {
@@ -1923,8 +2158,7 @@ const Whiteboard = forwardRef(
             border: 1px solid var(--panel-border);
             border-radius: 10px;
             background: #ffffff;
-            transition: border-color 140ms ease, box-shadow 140ms ease,
-              transform 140ms ease;
+            transition: border-color 140ms ease, box-shadow 140ms ease, transform 140ms ease;
           }
           .canvas-color-btn:hover {
             border-color: var(--primary-500);
@@ -1955,8 +2189,7 @@ const Whiteboard = forwardRef(
             border-radius: 6px;
             cursor: pointer;
             padding: 0;
-            transition: transform 120ms ease, box-shadow 140ms ease,
-              border-color 120ms ease;
+            transition: transform 120ms ease, box-shadow 140ms ease, border-color 120ms ease;
           }
 
           .preset-color-btn:hover {
@@ -2021,8 +2254,7 @@ const Whiteboard = forwardRef(
             border-radius: 10px;
             background: #ffffff;
             box-shadow: 0 2px 8px rgba(2, 6, 23, 0.05);
-            transition: transform 140ms ease, border-color 140ms ease,
-              box-shadow 140ms ease;
+            transition: transform 140ms ease, border-color 140ms ease, box-shadow 140ms ease;
           }
           .canvas-btn:hover {
             transform: translateY(-1px);
@@ -2031,7 +2263,7 @@ const Whiteboard = forwardRef(
           }
           .canvas-btn.danger:hover {
             border-color: #ef4444;
-            box-shadow: 0 8px 18px rgba(239, 68, 68, 0.15);
+            box-shadow: 0 8px 18px rgba(239,68,68,0.15);
           }
 
           .debug-info {
@@ -2039,8 +2271,7 @@ const Whiteboard = forwardRef(
             left: 10px;
             bottom: 10px;
             padding: 8px 10px;
-            font-color: black
-            background: rgba(255, 255, 255, 0.9);
+            background: rgba(255,255,255,0.9);
             border: 1px solid var(--panel-border);
             border-radius: 8px;
             box-shadow: 0 4px 12px rgba(2, 6, 23, 0.06);
@@ -2050,18 +2281,13 @@ const Whiteboard = forwardRef(
           .canvas-grid {
             position: absolute;
             inset: 0;
-            background-image: linear-gradient(#eef2ff 1px, transparent 1px),
-              linear-gradient(90deg, #eef2ff 1px, transparent 1px);
+            background-image: linear-gradient(#eef2ff 1px, transparent 1px), linear-gradient(90deg, #eef2ff 1px, transparent 1px);
             background-size: 24px 24px;
             animation: grid-in 240ms ease-out;
           }
           @keyframes grid-in {
-            from {
-              opacity: 0;
-            }
-            to {
-              opacity: 1;
-            }
+            from { opacity: 0; }
+            to { opacity: 1; }
           }
 
           .text-context-menu-overlay {
@@ -2313,58 +2539,6 @@ const Whiteboard = forwardRef(
             border-color: #1890ff;
             background: #f0f8ff;
             transform: scale(1.05);
-          }
-          .sidebar-toggle-btn {
-            position: absolute;
-            top: 10px;
-            left: 10px;
-            width: 44px;
-            height: 44px;
-            background: white;
-            border: 1px solid var(--panel-border);
-            border-radius: 12px;
-            box-shadow: var(--panel-shadow);
-            z-index: 50;
-            font-size: 20px;
-            cursor: pointer;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            transition: transform 0.2s ease, background 0.2s;
-          }
-
-          .sidebar-toggle-btn:hover {
-            transform: scale(1.05);
-            background: #f9fafb;
-          }
-
-          /* 2. Update Header to align text and close button */
-          .tools-header {
-            display: flex;
-            justify-content: space-between; /* Pushes X to the right */
-            align-items: center;
-            font-weight: 700;
-            letter-spacing: 0.2px;
-            margin-bottom: 14px;
-            padding-bottom: 8px;
-            border-bottom: 1px dashed var(--panel-border);
-          }
-
-          /* 3. Style for the Close (X) Button */
-          .close-sidebar-btn {
-            background: transparent;
-            border: none;
-            color: var(--muted);
-            font-size: 18px;
-            cursor: pointer;
-            padding: 4px 8px;
-            border-radius: 6px;
-            transition: background 0.2s, color 0.2s;
-          }
-
-          .close-sidebar-btn:hover {
-            background: #f3f4f6;
-            color: #ef4444; /* Turns red on hover */
           }
         `}</style>
       </div>

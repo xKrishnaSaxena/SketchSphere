@@ -5,7 +5,7 @@ module.exports = {
     if (!rooms.has(roomId)) {
       rooms.set(roomId, {
         users: [],
-        elements: [], // Stores the board state
+        elements: [],
       });
     }
     const room = rooms.get(roomId);
@@ -19,7 +19,7 @@ module.exports = {
     rooms.forEach((room, roomId) => {
       room.users = room.users.filter((user) => user.id !== userId);
       if (room.users.length === 0) {
-        rooms.delete(roomId); // Cleanup empty rooms
+        rooms.delete(roomId);
       } else {
         userRooms.push(roomId);
       }
@@ -37,26 +37,72 @@ module.exports = {
     }
   },
 
-  // NEW: Update a specific element (points for drawing, or x/y for moving)
-  updateElement: (roomId, elementId, updates) => {
-    if (rooms.has(roomId)) {
-      const room = rooms.get(roomId);
-      const index = room.elements.findIndex((el) => el.id === elementId);
-      if (index !== -1) {
-        // Merge existing properties with updates
-        room.elements[index] = { ...room.elements[index], ...updates };
+  updateElement: (roomId, elementId, updatedAttrs) => {
+    if (!rooms.has(roomId)) return;
+    const room = rooms.get(roomId);
+    const index = room.elements.findIndex((el) => el.id === elementId);
+    if (index === -1) return;
+
+    const existingElement = room.elements[index];
+
+    // If the type is changing (e.g., from freehand to circle), completely replace the element
+    if (updatedAttrs.type && updatedAttrs.type !== existingElement.type) {
+      // Complete replacement for shape recognition
+      const newElement = {
+        id: existingElement.id,
+        ...updatedAttrs,
+        // Ensure color and strokeWidth are preserved
+        color:
+          updatedAttrs.color !== undefined
+            ? updatedAttrs.color
+            : existingElement.color,
+        strokeWidth:
+          updatedAttrs.strokeWidth !== undefined
+            ? updatedAttrs.strokeWidth
+            : existingElement.strokeWidth,
+      };
+
+      // Remove properties that shouldn't exist for the new shape type
+      if (newElement.type === "circle") {
+        delete newElement.points;
+        delete newElement.width;
+        delete newElement.height;
+        delete newElement.side;
+      } else if (newElement.type === "rectangle") {
+        delete newElement.points;
+        delete newElement.radius;
+        delete newElement.side;
+      } else if (newElement.type === "square") {
+        delete newElement.points;
+        delete newElement.radius;
+        delete newElement.width;
+        delete newElement.height;
+      } else if (
+        newElement.type === "triangle" ||
+        newElement.type === "hexagon" ||
+        newElement.type === "pentagon" ||
+        newElement.type === "line"
+      ) {
+        delete newElement.radius;
+        delete newElement.width;
+        delete newElement.height;
+        delete newElement.side;
       }
+
+      room.elements[index] = newElement;
+    } else {
+      // Partial update (like transform, color change, etc.)
+      room.elements[index] = {
+        ...existingElement,
+        ...updatedAttrs,
+      };
     }
   },
 
-  // NEW: Specific handler to append points to a line (optimization)
-  appendPoint: (roomId, elementId, point) => {
+  replaceTempElement: (roomId, newElement) => {
     if (rooms.has(roomId)) {
       const room = rooms.get(roomId);
-      const element = room.elements.find((el) => el.id === elementId);
-      if (element && element.points) {
-        element.points.push(point[0], point[1]); // Flattened array push
-      }
+      room.elements = [...room.elements.filter((el) => !el.temp), newElement];
     }
   },
 
