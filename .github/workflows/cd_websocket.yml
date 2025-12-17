@@ -1,0 +1,46 @@
+name: Continuous Deployment (Websocket)
+on:
+  push:
+    branches: [main]
+    paths:
+      - "server/**"
+      - ".github/workflows/cd_websocket.yml"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - name: Docker login
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v4
+        with:
+          context: ./server
+          file: ./server/Dockerfile
+          push: true
+          tags: krishnasaxena/sketchsphere-backend:${{ github.sha }},krishnasaxena/sketchsphere-backend:latest
+
+      - name: Deploy to the VM
+        env:
+          PORT: 8082
+        run: |
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/ssh_key
+          chmod 600 ~/ssh_key
+
+          ssh -o StrictHostKeyChecking=no -i ~/ssh_key ubuntu@${{ secrets.DO_HOST }} -t "
+            sudo docker pull krishnasaxena/sketchsphere-backend:${{ github.sha }} && \
+            sudo docker rm -f sketchsphere_backend || true && \
+            sudo docker run --name sketchsphere_backend -d \
+            --restart unless-stopped \
+            -p 8082:8082 \
+            -e PORT=8082 \
+            krishnasaxena/sketchsphere-backend:${{ github.sha }} && \
+            sudo docker image prune -a -f
+          "
